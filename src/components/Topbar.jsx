@@ -6,6 +6,12 @@ const Topbar = () => {
   const user = getUser();
 
   const logout = () => {
+    const confirmLogout = window.confirm("Are you sure you want to logout?");
+
+    if (!confirmLogout) {
+      return;
+    }
+
     clearAuth();
     navigate("/login", { replace: true });
   };

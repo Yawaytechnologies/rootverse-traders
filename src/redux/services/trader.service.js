@@ -1,7 +1,9 @@
 import httpClient from "./httpClient";
 
 function cleanMobile(value) {
-  return String(value || "").replace(/\D/g, "").slice(0, 10);
+  return String(value || "")
+    .replace(/\D/g, "")
+    .slice(0, 10);
 }
 
 function toNumber(value) {
@@ -44,11 +46,17 @@ function buildTraderFormData(payload = {}) {
     formData.append("operational_districts", district);
   });
 
-  if (payload.profile_image instanceof File) {
+  if (
+    typeof File !== "undefined" &&
+    payload.profile_image instanceof File
+  ) {
     formData.append("profile_image", payload.profile_image);
   }
 
-  if (payload.company_logo instanceof File) {
+  if (
+    typeof File !== "undefined" &&
+    payload.company_logo instanceof File
+  ) {
     formData.append("company_logo", payload.company_logo);
   }
 
@@ -97,6 +105,54 @@ function buildTransportOperatorPayload(payload = {}) {
       payload.is_active !== undefined ? payload.is_active : true
     ),
   };
+}
+
+function buildHarvestBookingPayload(payload = {}) {
+  const rawStatus = String(
+    payload.booking_status ||
+      payload.bookingStatus ||
+      payload.status ||
+      "booked"
+  )
+    .trim()
+    .toLowerCase();
+
+  let bookingStatus = "booked";
+
+  if (rawStatus === "active") {
+    bookingStatus = "active";
+  }
+
+  if (
+    rawStatus === "booked" ||
+    rawStatus === "accepted" ||
+    rawStatus === "accept" ||
+    rawStatus === "confirmed" ||
+    rawStatus === "confirm"
+  ) {
+    bookingStatus = "booked";
+  }
+
+  const body = {
+    booking_status: bookingStatus,
+  };
+
+  const traderId =
+    payload.trader_id ||
+    payload.traderId ||
+    payload.id;
+
+  if (bookingStatus === "booked") {
+    const numericTraderId = Number(traderId);
+
+    if (!Number.isFinite(numericTraderId) || numericTraderId <= 0) {
+      throw new Error("Logged-in trader ID is missing. Please login again.");
+    }
+
+    body.trader_id = numericTraderId;
+  }
+
+  return body;
 }
 
 export const traderService = {
@@ -223,6 +279,25 @@ export const traderService = {
       body,
     });
   },
+
+  getHarvestRequests() {
+    return httpClient("/api/aquaculture/harvest", {
+      method: "GET",
+      auth: true,
+    });
+  },
+
+ updateHarvestBooking(harvestId, payload = {}) {
+  if (!harvestId) {
+    return Promise.reject(new Error("Harvest request reference is missing"));
+  }
+
+  return httpClient(`/api/aquaculture/harvest/${harvestId}/booking`, {
+    method: "PATCH",
+    auth: true,
+    body: buildHarvestBookingPayload(payload),
+  });
+},
 };
 
 export function registerTrader(payload) {
@@ -252,5 +327,8 @@ export const createTransportOperator = traderService.createTransportOperator;
 
 export const listCrates = traderService.getCrates;
 export const updateCrateStatus = traderService.updateCrateStatus;
+
+export const listHarvestRequests = traderService.getHarvestRequests;
+export const updateHarvestBooking = traderService.updateHarvestBooking;
 
 export default traderService;

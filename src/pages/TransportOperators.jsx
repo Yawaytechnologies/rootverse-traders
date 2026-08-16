@@ -5,6 +5,10 @@ import {
   createTransportOperator,
   getTransportOperators,
 } from "../redux/actions/trader.actions";
+import TraderButton from "../components/ui/TraderButton";
+import TraderInput from "../components/ui/TraderInput";
+import TraderSelect from "../components/ui/TraderSelect";
+import TraderStatusBadge from "../components/ui/TraderStatusBadge";
 
 const initialForm = {
   operator_rv_id: "",
@@ -99,7 +103,7 @@ export default function TransportOperators() {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">
           Transport Operators
@@ -121,7 +125,7 @@ export default function TransportOperators() {
         </div>
       ) : null}
 
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/60">
         <h2 className="mb-4 text-lg font-semibold text-gray-900">
           Add Transport Operator
         </h2>
@@ -209,12 +213,11 @@ export default function TransportOperators() {
             <label className="mb-1 block text-sm font-medium text-gray-700">
               Vehicle Type
             </label>
-            <select
+            <TraderSelect
               name="vehicle_type"
               value={form.vehicle_type}
               onChange={handleChange}
               required
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-600"
             >
               <option value="">Select vehicle type</option>
               <option value="Mini Truck">Mini Truck</option>
@@ -222,7 +225,7 @@ export default function TransportOperators() {
               <option value="Van">Van</option>
               <option value="Container">Container</option>
               <option value="Refrigerated Truck">Refrigerated Truck</option>
-            </select>
+            </TraderSelect>
           </div>
 
           <div className="flex items-center gap-2 pt-6">
@@ -231,31 +234,30 @@ export default function TransportOperators() {
               name="is_active"
               checked={form.is_active}
               onChange={handleChange}
-              className="h-4 w-4"
+              className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
             />
             <label className="text-sm font-medium text-gray-700">Active</label>
           </div>
 
           <div className="md:col-span-2">
-            <button
+            <TraderButton
               type="submit"
               disabled={loading}
-              className="rounded-lg bg-green-700 px-5 py-2 font-medium text-white hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? "Saving..." : "Create Transport Operator"}
-            </button>
+            </TraderButton>
           </div>
         </form>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
         <div className="border-b border-gray-200 p-5">
           <h2 className="text-lg font-semibold text-gray-900">
             Transport Operator List
           </h2>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="scrollbar-hidden max-w-full overflow-x-auto">
           <table className="w-full min-w-[1000px] text-left text-sm">
             <thead className="bg-gray-50 text-gray-600">
               <tr>
@@ -340,7 +342,7 @@ function Input({
       <label className="mb-1 block text-sm font-medium text-gray-700">
         {label}
       </label>
-      <input
+      <TraderInput
         type={type}
         name={name}
         value={value}
@@ -348,20 +350,11 @@ function Input({
         required={required}
         maxLength={maxLength}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-600"
       />
     </div>
   );
 }
 
 function StatusBadge({ active, activeText, inactiveText }) {
-  return (
-    <span
-      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-        active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-      }`}
-    >
-      {active ? activeText : inactiveText}
-    </span>
-  );
+  return <TraderStatusBadge status={active ? activeText : inactiveText} />;
 }

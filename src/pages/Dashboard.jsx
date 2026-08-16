@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Boxes, ClipboardCheck, Package, Truck } from "lucide-react";
 import {
   getLoggedTraderProfile,
   getTraderDashboard,
 } from "../redux/services/trader.service";
 import { clearAuth, saveUser } from "../utils/auth";
+import TraderButton from "../components/ui/TraderButton";
+import TraderCard from "../components/ui/TraderCard";
+import TraderStatusBadge from "../components/ui/TraderStatusBadge";
 
 function unwrap(response) {
   return response?.data || response || {};
@@ -125,61 +129,69 @@ const Dashboard = () => {
       title: "Quality Checkers",
       value: qualityCheckersValue,
       path: "/quality-checkers",
+      icon: ClipboardCheck,
     },
     {
       title: "Crate Packers",
       value: cratePackersValue,
       path: "/crate-packers",
+      icon: Package,
     },
     {
       title: "Transport Operators",
       value: transportOperatorsValue,
       path: "/transport-operators",
+      icon: Truck,
     },
     {
       title: "Crates",
       value: cratesValue,
       path: "/crates",
+      icon: Boxes,
     },
   ];
 
   if (loading) {
     return (
-      <div className="rounded-2xl bg-white p-8 shadow-sm">
+      <TraderCard className="p-6">
         <p className="font-medium text-slate-600">Loading dashboard...</p>
-      </div>
+      </TraderCard>
     );
   }
 
   return (
     <div className="space-y-6">
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
           {error}
         </div>
       )}
 
-      <section className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => {
           const details = getObjectDetails(card.value);
+          const Icon = card.icon;
 
           return (
             <button
               key={card.title}
               type="button"
               onClick={() => navigate(card.path)}
-              className="rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-emerald-300 hover:shadow-md"
+              className="group rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm shadow-slate-200/60 transition hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
             >
-              <p className="text-sm font-medium text-slate-500">
+              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 transition group-hover:bg-emerald-600 group-hover:text-white">
+                <Icon size={21} aria-hidden="true" />
+              </div>
+
+              <h3 className="text-3xl font-bold tracking-tight text-slate-950">
+                {getCount(card.value)}
+              </h3>
+              <p className="mt-1 text-sm font-semibold text-slate-500">
                 {card.title}
               </p>
 
-              <h3 className="mt-3 text-3xl font-bold text-slate-900">
-                {getCount(card.value)}
-              </h3>
-
               {details.length > 0 && (
-                <div className="mt-4 space-y-1 border-t border-slate-100 pt-3">
+                <div className="mt-4 space-y-1.5 border-t border-slate-100 pt-3">
                   {details.slice(0, 4).map((item) => (
                     <div
                       key={item.label}
@@ -200,10 +212,10 @@ const Dashboard = () => {
         })}
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-5 flex items-center justify-between">
+      <TraderCard className="p-5 sm:p-6">
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">
+            <h2 className="text-lg font-bold text-slate-950">
               Trader Profile
             </h2>
             <p className="text-sm text-slate-500">
@@ -211,15 +223,16 @@ const Dashboard = () => {
             </p>
           </div>
 
-          <button
+          <TraderButton
+            type="button"
             onClick={() => navigate("/profile")}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+            className="w-full sm:w-auto"
           >
             View Full Profile
-          </button>
+          </TraderButton>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <Info label="Trader Name" value={profile.trader_name} />
           <Info label="Trader Type" value={profile.trader_type} />
           <Info label="Mobile" value={profile.mobile} />
@@ -235,23 +248,30 @@ const Dashboard = () => {
           />
           <Info label="Years Of Experience" value={profile.years_of_experience} />
           <Info label="Markets" value={profile.markets} />
-          <Info label="Status" value={profile.is_active ? "Active" : "Inactive"} />
+          <Info
+            label="Status"
+            value={
+              <TraderStatusBadge
+                status={profile.is_active ? "Active" : "Inactive"}
+              />
+            }
+          />
           <Info label="Created At" value={formatDate(profile.created_at)} />
         </div>
-      </section>
+      </TraderCard>
     </div>
   );
 };
 
 const Info = ({ label, value }) => {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
       <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
         {label}
       </p>
-      <p className="mt-2 break-words text-sm font-semibold text-slate-900">
+      <div className="mt-1.5 break-words text-sm font-semibold text-slate-900">
         {value === 0 ? 0 : value || "-"}
-      </p>
+      </div>
     </div>
   );
 };

@@ -5,6 +5,10 @@ import {
   getQualityCheckers,
 } from "../redux/actions/trader.actions";
 import traderService from "../redux/services/trader.service";
+import TraderButton from "../components/ui/TraderButton";
+import TraderInput from "../components/ui/TraderInput";
+import TraderSelect from "../components/ui/TraderSelect";
+import TraderStatusBadge from "../components/ui/TraderStatusBadge";
 
 const initialForm = {
   checker_name: "",
@@ -269,7 +273,7 @@ export default function QualityCheckers() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Quality Checkers</h1>
         <p className="text-sm text-gray-500">
@@ -295,7 +299,7 @@ export default function QualityCheckers() {
         </div>
       ) : null}
 
-      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/60">
         <h2 className="mb-4 text-lg font-semibold text-gray-900">
           Add Quality Checker
         </h2>
@@ -308,13 +312,12 @@ export default function QualityCheckers() {
             <label className="mb-1 block text-sm font-medium text-gray-700">
               Checker Name
             </label>
-            <input
+            <TraderInput
               name="checker_name"
               value={form.checker_name}
               onChange={handleChange}
               required
               placeholder="Enter checker name"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-600"
             />
           </div>
 
@@ -322,14 +325,13 @@ export default function QualityCheckers() {
             <label className="mb-1 block text-sm font-medium text-gray-700">
               Checker Email
             </label>
-            <input
+            <TraderInput
               type="email"
               name="checker_email"
               value={form.checker_email}
               onChange={handleChange}
               required
               placeholder="Enter checker email"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-600"
             />
           </div>
 
@@ -337,14 +339,13 @@ export default function QualityCheckers() {
             <label className="mb-1 block text-sm font-medium text-gray-700">
               Checker Phone
             </label>
-            <input
+            <TraderInput
               name="checker_phone"
               value={form.checker_phone}
               onChange={handleChange}
               required
               maxLength={10}
               placeholder="10 digit mobile number"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-600"
             />
           </div>
 
@@ -352,13 +353,12 @@ export default function QualityCheckers() {
             <label className="mb-1 block text-sm font-medium text-gray-700">
               Checker Code
             </label>
-            <input
+            <TraderInput
               name="checker_code"
               value={form.checker_code}
               onChange={handleChange}
               required
               placeholder="QC-001"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-600"
             />
           </div>
 
@@ -366,13 +366,12 @@ export default function QualityCheckers() {
             <label className="mb-1 block text-sm font-medium text-gray-700">
               Country
             </label>
-            <select
+            <TraderSelect
               name="country_id"
               value={form.country_id}
               onChange={handleChange}
               required
               disabled={masterLoading}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-600 disabled:bg-gray-100"
             >
               <option value="">Select country</option>
               {countries.map((country) => (
@@ -380,20 +379,19 @@ export default function QualityCheckers() {
                   {getItemName(country)}
                 </option>
               ))}
-            </select>
+            </TraderSelect>
           </div>
 
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">
               State
             </label>
-            <select
+            <TraderSelect
               name="state_id"
               value={form.state_id}
               onChange={handleChange}
               required
               disabled={!form.country_id || masterLoading}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-600 disabled:bg-gray-100"
             >
               <option value="">Select state</option>
               {states.map((state) => (
@@ -401,20 +399,19 @@ export default function QualityCheckers() {
                   {getItemName(state)}
                 </option>
               ))}
-            </select>
+            </TraderSelect>
           </div>
 
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">
               District
             </label>
-            <select
+            <TraderSelect
               name="district_id"
               value={form.district_id}
               onChange={handleChange}
               required
               disabled={!form.state_id || masterLoading}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-600 disabled:bg-gray-100"
             >
               <option value="">Select district</option>
               {districts.map((district) => (
@@ -422,20 +419,19 @@ export default function QualityCheckers() {
                   {getItemName(district)}
                 </option>
               ))}
-            </select>
+            </TraderSelect>
           </div>
 
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">
               Location
             </label>
-            <select
+            <TraderSelect
               name="location_id"
               value={form.location_id}
               onChange={handleChange}
               required
               disabled={!form.district_id || masterLoading}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-600 disabled:bg-gray-100"
             >
               <option value="">Select location</option>
               {locations.map((location) => (
@@ -443,7 +439,7 @@ export default function QualityCheckers() {
                   {getItemName(location)}
                 </option>
               ))}
-            </select>
+            </TraderSelect>
           </div>
 
           <div className="flex items-center gap-2 pt-6">
@@ -452,31 +448,30 @@ export default function QualityCheckers() {
               name="is_active"
               checked={form.is_active}
               onChange={handleChange}
-              className="h-4 w-4"
+              className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
             />
             <label className="text-sm font-medium text-gray-700">Active</label>
           </div>
 
           <div className="md:col-span-2">
-            <button
+            <TraderButton
               type="submit"
               disabled={loading || masterLoading}
-              className="rounded-lg bg-green-700 px-5 py-2 font-medium text-white hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? "Saving..." : "Create Quality Checker"}
-            </button>
+            </TraderButton>
           </div>
         </form>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
         <div className="border-b border-gray-200 p-5">
           <h2 className="text-lg font-semibold text-gray-900">
             Quality Checker List
           </h2>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="scrollbar-hidden max-w-full overflow-x-auto">
           <table className="w-full min-w-[900px] text-left text-sm">
             <thead className="bg-gray-50 text-gray-600">
               <tr>
@@ -515,15 +510,9 @@ export default function QualityCheckers() {
                       {getLocationNameForTable(item)}
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          item.is_active === false
-                            ? "bg-red-100 text-red-700"
-                            : "bg-green-100 text-green-700"
-                        }`}
-                      >
-                        {item.is_active === false ? "Inactive" : "Active"}
-                      </span>
+                      <TraderStatusBadge
+                        status={item.is_active === false ? "Inactive" : "Active"}
+                      />
                     </td>
                   </tr>
                 ))

@@ -495,6 +495,9 @@ export default function SourceProcurement() {
   const [sourceTypeFilter, setSourceTypeFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [acceptRequest, setAcceptRequest] = useState(null);
+  const [acceptRequestError, setAcceptRequestError] = useState("");
+  const [completeHarvestRequest, setCompleteHarvestRequest] = useState(null);
   const [loggedTrader, setLoggedTrader] = useState(null);
   const [completeHarvestOpen, setCompleteHarvestOpen] = useState(false);
   const [actualHarvestWeight, setActualHarvestWeight] = useState("");
@@ -616,40 +619,67 @@ export default function SourceProcurement() {
   }, [requests]);
 
   const handleAccept = async (item) => {
-  if (!item?.id) {
-    setError("Harvest request reference is missing. Please refresh and try again.");
-    return;
-  }
+    if (!item?.id) {
+      const message = "Harvest request reference is missing. Please refresh and try again.";
+      setError(message);
+      setAcceptRequestError(message);
+      return;
+    }
 
-  const traderId = getLoggedTraderId(loggedTrader);
+    const traderId = getLoggedTraderId(loggedTrader);
 
-  if (!traderId) {
-    setError("Logged-in trader ID is missing. Please login again.");
-    return;
-  }
+    if (!traderId) {
+      const message = "Logged-in trader ID is missing. Please login again.";
+      setError(message);
+      setAcceptRequestError(message);
+      return;
+    }
 
-  const confirmed = window.confirm(
-    `Accept harvest request from ${item.sourceName}?`
-  );
+    try {
+      setActionLoadingId(item.id);
+      setError("");
+      setAcceptRequestError("");
+      setSuccessMessage("");
 
-  if (!confirmed) return;
+      await traderService.updateHarvestBooking(item.id, {
+        booking_status: "booked",
+        trader_id: traderId,
+      });
 
-  try {
-    setActionLoadingId(item.id);
-    setError("");
+      await loadHarvestRequests();
+      setAcceptRequest(null);
+      setSuccessMessage("Harvest request accepted successfully.");
+    } catch (err) {
+      const message = getErrorMessage(err);
+      setError(message);
+      setAcceptRequestError(message);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
 
-    await traderService.updateHarvestBooking(item.id, {
-      booking_status: "booked",
-      trader_id: traderId,
-    });
+  const openHarvestDetailsModal = (item) => {
+    setAcceptRequest(null);
+    setAcceptRequestError("");
+    setCompleteHarvestOpen(false);
+    setCompleteHarvestRequest(null);
+    setSelectedRequest(item);
+  };
 
-    await loadHarvestRequests();
-  } catch (err) {
-    setError(getErrorMessage(err));
-  } finally {
-    setActionLoadingId(null);
-  }
-};
+  const openAcceptRequestModal = (item) => {
+    setSelectedRequest(null);
+    setCompleteHarvestOpen(false);
+    setCompleteHarvestRequest(null);
+    setAcceptRequest(item);
+    setAcceptRequestError("");
+  };
+
+  const closeAcceptRequestModal = () => {
+    if (actionLoadingId === acceptRequest?.id) return;
+
+    setAcceptRequest(null);
+    setAcceptRequestError("");
+  };
 
   const openCompleteHarvestModal = (item) => {
     if (!loggedTraderId) {
@@ -662,7 +692,10 @@ export default function SourceProcurement() {
       return;
     }
 
-    setSelectedRequest(item);
+    setSelectedRequest(null);
+    setAcceptRequest(null);
+    setAcceptRequestError("");
+    setCompleteHarvestRequest(item);
     setActualHarvestWeight("");
     setCompletedAt(getLocalDateTimeValue());
     setCompleteHarvestError("");
@@ -673,6 +706,7 @@ export default function SourceProcurement() {
     if (completeHarvestLoading) return;
 
     setCompleteHarvestOpen(false);
+    setCompleteHarvestRequest(null);
     setActualHarvestWeight("");
     setCompletedAt(getLocalDateTimeValue());
     setCompleteHarvestError("");
@@ -681,7 +715,7 @@ export default function SourceProcurement() {
   const handleCompleteHarvest = async (event) => {
     event.preventDefault();
 
-    if (!selectedRequest?.id) {
+    if (!completeHarvestRequest?.id) {
       setCompleteHarvestError("Harvest reference is missing. Please refresh and try again.");
       return;
     }
@@ -691,7 +725,7 @@ export default function SourceProcurement() {
       return;
     }
 
-    if (!isAssignedToLoggedTrader(selectedRequest, loggedTraderId)) {
+    if (!isAssignedToLoggedTrader(completeHarvestRequest, loggedTraderId)) {
       setCompleteHarvestError("This harvest is assigned to another trader.");
       return;
     }
@@ -720,19 +754,16 @@ export default function SourceProcurement() {
       setCompleteHarvestError("");
       setSuccessMessage("");
 
-      await traderService.completeHarvestForPayment(selectedRequest.id, {
+      await traderService.completeHarvestForPayment(completeHarvestRequest.id, {
         actual_harvest_weight_kg: weight,
         completed_at: completedDate.toISOString(),
       });
 
-      const refreshedRequests = await loadHarvestRequests();
-      const refreshedSelectedRequest = refreshedRequests.find(
-        (item) => item.id === selectedRequest.id
-      );
-
-      setSelectedRequest(refreshedSelectedRequest || null);
+      await loadHarvestRequests();
+      setSelectedRequest(null);
       setSuccessMessage("Harvest completed successfully.");
       setCompleteHarvestOpen(false);
+      setCompleteHarvestRequest(null);
       setActualHarvestWeight("");
       setCompletedAt(getLocalDateTimeValue());
     } catch (err) {
@@ -941,7 +972,7 @@ export default function SourceProcurement() {
                               <div className="flex flex-wrap items-center justify-end gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => setSelectedRequest(item)}
+                                  onClick={() => openHarvestDetailsModal(item)}
                                   title="View Details"
                                   aria-label="View harvest details"
                                   className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
@@ -952,7 +983,7 @@ export default function SourceProcurement() {
                                   <button
                                     type="button"
                                     disabled={isBusy || !item.id}
-                                    onClick={() => handleAccept(item)}
+                                    onClick={() => openAcceptRequestModal(item)}
                                     title="Accept Request"
                                     aria-label="Accept harvest request"
                                     className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
@@ -1029,7 +1060,7 @@ export default function SourceProcurement() {
                       <div className="mt-4 flex flex-wrap items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => setSelectedRequest(item)}
+                          onClick={() => openHarvestDetailsModal(item)}
                           title="View Details"
                           aria-label="View harvest details"
                           className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
@@ -1041,7 +1072,7 @@ export default function SourceProcurement() {
                           <button
                             type="button"
                             disabled={isBusy || !item.id}
-                            onClick={() => handleAccept(item)}
+                            onClick={() => openAcceptRequestModal(item)}
                             title="Accept Request"
                             aria-label="Accept harvest request"
                             className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
@@ -1187,38 +1218,53 @@ export default function SourceProcurement() {
               </DetailSection>
             </div>
 
-            {getCompletionActionState(selectedRequest, loggedTraderId) === "ACCEPT" ||
-            getCompletionActionState(selectedRequest, loggedTraderId) === "COMPLETE" ? (
-              <div className="shrink-0 flex flex-col-reverse gap-3 border-t border-slate-200 bg-white p-5 sm:flex-row sm:justify-end sm:p-6">
-                {getCompletionActionState(selectedRequest, loggedTraderId) === "ACCEPT" ? (
-                  <TraderButton
-                    type="button"
-                    disabled={actionLoadingId === selectedRequest.id || !selectedRequest.id}
-                    onClick={async () => {
-                      await handleAccept(selectedRequest);
-                      setSelectedRequest(null);
-                    }}
-                  >
-                    {actionLoadingId === selectedRequest.id
-                      ? "Saving..."
-                      : "Accept Request"}
-                  </TraderButton>
-                ) : null}
-
-                {getCompletionActionState(selectedRequest, loggedTraderId) === "COMPLETE" ? (
-                  <TraderButton
-                    type="button"
-                    disabled={!selectedRequest.id}
-                    onClick={() => openCompleteHarvestModal(selectedRequest)}
-                  >
-                    Complete Harvest
-                  </TraderButton>
-                ) : null}
-              </div>
-            ) : null}
           </div>
         </div>
       ) : null}
+
+      <Modal
+        open={Boolean(acceptRequest)}
+        title="Accept Harvest Request"
+        onClose={closeAcceptRequestModal}
+        className="max-w-xl"
+      >
+        <div className="space-y-5">
+          <p className="text-sm font-semibold leading-6 text-slate-700">
+            Are you sure you want to accept this harvest request?
+          </p>
+
+          <section className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:grid-cols-2">
+            <Detail label="Farmer Name" value={acceptRequest?.farmerName} />
+            <Detail label="Harvest Reference" value={acceptRequest?.referenceCode} />
+            <Detail label="Farm / Pond" value={`${acceptRequest?.farmName || ""} / ${acceptRequest?.pondName || ""}`} wide />
+          </section>
+
+          {acceptRequestError ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+              {acceptRequestError}
+            </div>
+          ) : null}
+
+          <div className="flex flex-col-reverse gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:justify-end">
+            <TraderButton
+              type="button"
+              variant="secondary"
+              onClick={closeAcceptRequestModal}
+              disabled={actionLoadingId === acceptRequest?.id}
+            >
+              Cancel
+            </TraderButton>
+
+            <TraderButton
+              type="button"
+              onClick={() => handleAccept(acceptRequest)}
+              disabled={!acceptRequest?.id || actionLoadingId === acceptRequest?.id}
+            >
+              {actionLoadingId === acceptRequest?.id ? "Accepting..." : "Accept Request"}
+            </TraderButton>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={completeHarvestOpen}
@@ -1230,11 +1276,11 @@ export default function SourceProcurement() {
           <section className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 sm:grid-cols-2">
             <Detail
               label="Harvest Reference"
-              value={selectedRequest?.referenceCode}
+              value={completeHarvestRequest?.referenceCode}
             />
-            <Detail label="Farmer Name" value={selectedRequest?.farmerName} />
-            <Detail label="Farm Name" value={selectedRequest?.farmName} />
-            <Detail label="Species" value={selectedRequest?.species} />
+            <Detail label="Farmer Name" value={completeHarvestRequest?.farmerName} />
+            <Detail label="Farm Name" value={completeHarvestRequest?.farmName} />
+            <Detail label="Species" value={completeHarvestRequest?.species} />
           </section>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

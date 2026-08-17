@@ -609,6 +609,7 @@ export default function Payments() {
   const [receiptsError, setReceiptsError] = useState("");
   const [receiptsLoaded, setReceiptsLoaded] = useState(false);
   const [selectedProcurement, setSelectedProcurement] = useState(null);
+  const [selectedProcurementDetails, setSelectedProcurementDetails] = useState(null);
   const [createProcurementOpen, setCreateProcurementOpen] = useState(false);
   const [completedHarvests, setCompletedHarvests] = useState([]);
   const [completedHarvestsLoading, setCompletedHarvestsLoading] = useState(false);
@@ -806,6 +807,14 @@ export default function Payments() {
     setPaymentIdempotencyKey("");
     resetPaymentForm();
   }, [paymentSubmitting, resetPaymentForm]);
+
+  const openProcurementDetails = useCallback((procurement) => {
+    setSelectedProcurementDetails(procurement || null);
+  }, []);
+
+  const closeProcurementDetails = useCallback(() => {
+    setSelectedProcurementDetails(null);
+  }, []);
 
   const openReceipt = useCallback(async (receiptId) => {
     setSelectedReceiptId(receiptId || "");
@@ -1181,6 +1190,7 @@ export default function Payments() {
           successMessage={successMessage}
           onRefresh={loadProcurements}
           onCreateProcurement={openCreateProcurementModal}
+          onViewProcurement={openProcurementDetails}
           onRecordPayment={openRecordPaymentModal}
         />
       ) : (
@@ -1254,6 +1264,11 @@ export default function Payments() {
           openReceipt(receiptId);
         }}
       />
+      <ProcurementDetailsModal
+        open={Boolean(selectedProcurementDetails)}
+        procurement={selectedProcurementDetails}
+        onClose={closeProcurementDetails}
+      />
       <ReceiptDetailsModal
         open={receiptDetailsOpen}
         onClose={closeReceiptDetailsModal}
@@ -1282,6 +1297,7 @@ function ProcurementsTab({
   successMessage,
   onRefresh,
   onCreateProcurement,
+  onViewProcurement,
   onRecordPayment,
 }) {
   const hasProcurements = procurements.length > 0;
@@ -1304,7 +1320,7 @@ function ProcurementsTab({
               </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px] lg:w-auto lg:grid-cols-[260px_170px_auto_auto]">
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px] lg:w-auto lg:grid-cols-[minmax(220px,260px)_170px_auto_auto]">
               <div className="relative min-w-0">
                 <Search
                   size={17}
@@ -1365,19 +1381,17 @@ function ProcurementsTab({
 
         <div className="hidden p-4 sm:block sm:p-5">
           <div className="overflow-hidden rounded-2xl border border-slate-200">
-            <div className="scrollbar-hidden max-w-full overflow-x-auto">
-              <table className="min-w-[1020px] divide-y divide-slate-200 text-left">
+            <div className="max-w-full overflow-hidden">
+              <table className="w-full table-fixed divide-y divide-slate-200 text-left">
                 <thead className="bg-slate-50">
                   <tr>
-                    <TableHead>Procurement No</TableHead>
-                    <TableHead>Harvest</TableHead>
-                    <TableHead>Producer / Farmer</TableHead>
-                    <TableHead>Actual Weight</TableHead>
+                    <TableHead className="w-[24%]">Procurement</TableHead>
+                    <TableHead className="w-[18%]">Producer / Farmer</TableHead>
                     <TableHead>Total Value</TableHead>
                     <TableHead>Paid</TableHead>
                     <TableHead>Outstanding</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead className="w-[13%]">Status</TableHead>
+                    <TableHead className="w-[12%]">Actions</TableHead>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
@@ -1385,7 +1399,7 @@ function ProcurementsTab({
                     <ProcurementTableLoading />
                   ) : error ? (
                     <tr>
-                      <td colSpan="9" className="px-5 py-14">
+                      <td colSpan="7" className="px-5 py-14">
                         <ErrorState message={error} onRetry={onRefresh} />
                       </td>
                     </tr>
@@ -1394,12 +1408,13 @@ function ProcurementsTab({
                       <ProcurementTableRow
                         key={item.id || `${item.procurementNo}-${index}`}
                         procurement={item}
+                        onView={onViewProcurement}
                         onRecordPayment={onRecordPayment}
                       />
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="9" className="px-5 py-14">
+                      <td colSpan="7" className="px-5 py-14">
                         <EmptyState
                           icon={ClipboardList}
                           title="No procurements available."
@@ -1425,6 +1440,7 @@ function ProcurementsTab({
                 <ProcurementMobileCard
                   key={item.id || `${item.procurementNo}-${index}`}
                   procurement={item}
+                  onView={onViewProcurement}
                   onRecordPayment={onRecordPayment}
                 />
               ))}
@@ -2008,6 +2024,83 @@ function RecordPaymentModal({
   );
 }
 
+function ProcurementDetailsModal({ open, procurement, onClose }) {
+  const raw = procurement?.raw || {};
+
+  return (
+    <Modal
+      open={open}
+      title="Procurement Details"
+      onClose={onClose}
+      className="max-w-4xl"
+    >
+      <div className="space-y-5">
+        <DetailSection title="Procurement">
+          <SummaryDetail label="Procurement No" value={procurement?.procurementNo || notAvailable} />
+          <SummaryDetail label="Status" value={procurement?.status || notAvailable} />
+          <SummaryDetail label="Harvest Reference" value={procurement?.harvest || notAvailable} />
+          <SummaryDetail label="Producer / Farmer" value={procurement?.producer || notAvailable} />
+        </DetailSection>
+
+        <DetailSection title="Weights And Values">
+          <SummaryDetail label="Actual Weight" value={formatWeight(procurement?.actualWeight || notAvailable)} />
+          <SummaryDetail
+            label="Rate Per Kg"
+            value={formatOptionalCurrency(getFirstValue(raw, ["rate_per_kg", "ratePerKg"]))}
+          />
+          <SummaryDetail
+            label="Gross Value"
+            value={formatOptionalCurrency(getFirstValue(raw, ["gross_amount", "grossAmount"]))}
+          />
+          <SummaryDetail
+            label="Adjustment"
+            value={formatOptionalCurrency(getFirstValue(raw, ["adjustment_amount", "adjustmentAmount"]))}
+          />
+          <SummaryDetail
+            label="Tax"
+            value={formatOptionalCurrency(getFirstValue(raw, ["tax_amount", "taxAmount"]))}
+          />
+          <SummaryDetail label="Total Value" value={formatCurrency(procurement?.totalValue)} />
+        </DetailSection>
+
+        <DetailSection title="Settlement">
+          <SummaryDetail label="Total Paid" value={formatCurrency(procurement?.totalPaid)} />
+          <SummaryDetail label="Outstanding Balance" value={formatCurrency(procurement?.outstandingBalance)} />
+          <SummaryDetail
+            label="Payments Count"
+            value={Array.isArray(procurement?.payments) ? String(procurement.payments.length) : notAvailable}
+          />
+          <SummaryDetail
+            label="Procurement Date"
+            value={formatDateTime(getFirstValue(raw, ["procurement_date", "procurementDate"]))}
+          />
+        </DetailSection>
+
+        <DetailSection title="Terms And Authorization">
+          <SummaryDetail
+            label="Payment Terms"
+            value={valueOrNotAvailable(getFirstValue(raw, ["payment_terms", "paymentTerms"]))}
+          />
+          <SummaryDetail
+            label="Trader GSTIN"
+            value={valueOrNotAvailable(getFirstValue(raw, ["trader_gstin", "traderGstin"]))}
+          />
+          <SummaryDetail
+            label="Authorized Signatory"
+            value={valueOrNotAvailable(getFirstValue(raw, ["authorized_signatory", "authorizedSignatory"]))}
+          />
+        </DetailSection>
+
+        <ModalActions>
+          <TraderButton type="button" variant="secondary" onClick={onClose}>
+            Close
+          </TraderButton>
+        </ModalActions>
+      </div>
+    </Modal>
+  );
+}
+
 function ReceiptDetailsModal({
   open,
   onClose,
@@ -2027,337 +2120,251 @@ function ReceiptDetailsModal({
   const trader = receipt?.trader || {};
   const producer = receipt?.producer || {};
   const harvest = receipt?.harvest || {};
+  const receiptNo = valueOrReceiptFallback(
+    getFirstValue(raw, ["receipt_no", "receiptNo"]) ||
+      getFirstValue(snapshot, ["receipt_no", "receiptNo"])
+  );
+
+  if (!open) return null;
 
   return (
-    <Modal open={open} title="Receipt Details" onClose={onClose} className="max-w-5xl">
-      <div className="space-y-5">
-        {loading ? (
-          <ReceiptDetailsLoading />
-        ) : error ? (
-          <ErrorState
-            title="Unable to load receipt details."
-            message={error || "Unable to load receipt details."}
-            onRetry={onRetry}
-          />
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            <DetailSection title="Receipt Information">
-              <SummaryDetail
-                label="Receipt No"
-                value={valueOrReceiptFallback(
-                  getFirstValue(raw, ["receipt_no", "receiptNo"]) ||
-                    getFirstValue(snapshot, ["receipt_no", "receiptNo"])
-                )}
-              />
-              <SummaryDetail
-                label="Payment No"
-                value={valueOrReceiptFallback(
-                  getFirstValue(raw, ["payment_no", "paymentNo"]) ||
-                    getFirstValue(payment, ["payment_no", "paymentNo", "id"]) ||
-                    getFirstValue(snapshot, ["payment_no", "paymentNo"])
-                )}
-              />
-              <SummaryDetail
-                label="Procurement No"
-                value={valueOrReceiptFallback(
-                  getFirstValue(raw, ["procurement_no", "procurementNo"]) ||
-                    getFirstValue(procurement, [
-                      "procurement_no",
-                      "procurementNo",
-                      "id",
-                    ]) ||
-                    getFirstValue(snapshot, ["procurement_no", "procurementNo"])
-                )}
-              />
-            </DetailSection>
-
-            <DetailSection title="Trader Details">
-              <SummaryDetail
-                label="Trader Name"
-                value={valueOrReceiptFallback(
-                  getFirstValue(trader, ["trader_name", "traderName", "name"]) ||
-                    getFirstValue(snapshot, ["trader_name", "traderName"]) ||
-                    getFirstValue(raw, ["trader_name", "traderName"])
-                )}
-              />
-              <SummaryDetail
-                label="Trader Code"
-                value={valueOrReceiptFallback(
-                  getFirstValue(trader, ["trader_code", "traderCode", "code"]) ||
-                    getFirstValue(snapshot, ["trader_code", "traderCode"]) ||
-                    getFirstValue(raw, ["trader_code", "traderCode"])
-                )}
-              />
-              <SummaryDetail
-                label="Trader GSTIN"
-                value={valueOrReceiptFallback(
-                  getFirstValue(trader, ["trader_gstin", "traderGstin", "gstin"]) ||
-                    getFirstValue(snapshot, ["trader_gstin", "traderGstin", "gstin"]) ||
-                    getFirstValue(raw, ["trader_gstin", "traderGstin", "gstin"])
-                )}
-              />
-              <SummaryDetail
-                label="Authorized Signatory"
-                value={valueOrReceiptFallback(
-                  getFirstValue(trader, [
-                    "authorized_signatory",
-                    "authorizedSignatory",
-                  ]) ||
-                    getFirstValue(snapshot, [
-                      "authorized_signatory",
-                      "authorizedSignatory",
-                    ]) ||
-                    getFirstValue(raw, [
-                      "authorized_signatory",
-                      "authorizedSignatory",
-                    ])
-                )}
-              />
-            </DetailSection>
-
-            <DetailSection title="Producer / Farmer Details">
-              <SummaryDetail
-                label="Producer / Farmer Name"
-                value={valueOrReceiptFallback(
-                  getFirstValue(producer, [
-                    "producer_name",
-                    "producerName",
-                    "farmer_name",
-                    "farmerName",
-                    "name",
-                  ]) ||
-                    getFirstValue(snapshot, [
-                      "producer_name",
-                      "producerName",
-                      "farmer_name",
-                      "farmerName",
-                    ]) ||
-                    getFirstValue(raw, [
-                      "producer_name",
-                      "producerName",
-                      "farmer_name",
-                      "farmerName",
-                    ])
-                )}
-              />
-              <SummaryDetail
-                label="Mobile"
-                value={valueOrReceiptFallback(
-                  getFirstValue(producer, [
-                    "mobile",
-                    "phone",
-                    "farmer_mobile",
-                    "farmerMobile",
-                  ]) ||
-                    getFirstValue(snapshot, [
-                      "mobile",
-                      "phone",
-                      "farmer_mobile",
-                      "farmerMobile",
-                    ]) ||
-                    getFirstValue(raw, [
-                      "mobile",
-                      "phone",
-                      "farmer_mobile",
-                      "farmerMobile",
-                    ])
-                )}
-              />
-              <SummaryDetail
-                label="Farm Name"
-                value={valueOrReceiptFallback(
-                  getFirstValue(producer, ["farm_name", "farmName"]) ||
-                    getFirstValue(harvest, ["farm_name", "farmName"]) ||
-                    getFirstValue(snapshot, ["farm_name", "farmName"]) ||
-                    getFirstValue(raw, ["farm_name", "farmName"])
-                )}
-              />
-              <SummaryDetail
-                label="Harvest Reference"
-                value={valueOrReceiptFallback(
-                  getFirstValue(harvest, [
-                    "harvest_code",
-                    "harvestCode",
-                    "request_code",
-                    "requestCode",
-                    "id",
-                  ]) ||
-                    getFirstValue(procurement, [
-                      "harvest_code",
-                      "harvestCode",
-                      "harvest_id",
-                      "harvestId",
-                    ]) ||
-                    getFirstValue(snapshot, [
-                      "harvest_code",
-                      "harvestCode",
-                      "harvest_id",
-                      "harvestId",
-                    ]) ||
-                    getFirstValue(raw, [
-                      "harvest_code",
-                      "harvestCode",
-                      "harvest_id",
-                      "harvestId",
-                    ])
-                )}
-              />
-            </DetailSection>
-
-            <DetailSection title="Procurement Summary">
-              <SummaryDetail
-                label="Procurement Value"
-                value={formatOptionalCurrency(
-                  getFirstValue(snapshot, [
-                    "procurement_value",
-                    "procurementValue",
-                    "procurement_amount",
-                    "procurementAmount",
-                    "total_value",
-                    "totalValue",
-                  ])
-                )}
-              />
-            </DetailSection>
-
-            <DetailSection title="Settlement Summary">
-              <SummaryDetail
-                label="Paid Before"
-                value={formatOptionalCurrency(
-                  getFirstValue(snapshot, [
-                    "paid_before",
-                    "paidBefore",
-                    "paid_before_amount",
-                    "paidBeforeAmount",
-                  ])
-                )}
-              />
-              <SummaryDetail
-                label="Current Payment"
-                value={formatOptionalCurrency(
-                  getFirstValue(snapshot, [
-                    "current_payment",
-                    "currentPayment",
-                    "current_payment_amount",
-                    "currentPaymentAmount",
-                    "payment_amount",
-                    "paymentAmount",
-                  ])
-                )}
-              />
-              <SummaryDetail
-                label="Paid After"
-                value={formatOptionalCurrency(
-                  getFirstValue(snapshot, [
-                    "paid_after",
-                    "paidAfter",
-                    "paid_after_amount",
-                    "paidAfterAmount",
-                  ])
-                )}
-              />
-              <SummaryDetail
-                label="Outstanding Balance"
-                value={formatOptionalCurrency(
-                  getFirstValue(snapshot, [
-                    "outstanding_balance",
-                    "outstandingBalance",
-                  ])
-                )}
-              />
-            </DetailSection>
-
-            <DetailSection title="Payment Information">
-              <SummaryDetail
-                label="Payment Mode"
-                value={valueOrReceiptFallback(
-                  getFirstValue(payment, ["payment_mode", "paymentMode"]) ||
-                    getFirstValue(snapshot, ["payment_mode", "paymentMode"]) ||
-                    getFirstValue(raw, ["payment_mode", "paymentMode"])
-                )}
-              />
-              <SummaryDetail
-                label="Bank Reference"
-                value={valueOrReceiptFallback(
-                  getFirstValue(payment, ["bank_reference", "bankReference"]) ||
-                    getFirstValue(snapshot, ["bank_reference", "bankReference"]) ||
-                    getFirstValue(raw, ["bank_reference", "bankReference"])
-                )}
-              />
-              <SummaryDetail
-                label="Bank Name"
-                value={valueOrReceiptFallback(
-                  getFirstValue(payment, ["bank_name", "bankName"]) ||
-                    getFirstValue(snapshot, ["bank_name", "bankName"]) ||
-                    getFirstValue(raw, ["bank_name", "bankName"])
-                )}
-              />
-              <SummaryDetail
-                label="Account Holder Name"
-                value={valueOrReceiptFallback(
-                  getFirstValue(payment, [
-                    "account_holder_name",
-                    "accountHolderName",
-                  ]) ||
-                    getFirstValue(snapshot, [
-                      "account_holder_name",
-                      "accountHolderName",
-                    ]) ||
-                    getFirstValue(raw, [
-                      "account_holder_name",
-                      "accountHolderName",
-                    ])
-                )}
-              />
-              <SummaryDetail
-                label="Paid At"
-                value={formatDateTime(
-                  getFirstValue(payment, ["paid_at", "paidAt"]) ||
-                    getFirstValue(snapshot, ["paid_at", "paidAt"]) ||
-                    getFirstValue(raw, ["paid_at", "paidAt"])
-                )}
-              />
-              <SummaryDetail
-                label="Remarks"
-                value={valueOrReceiptFallback(
-                  getFirstValue(payment, ["remarks"]) ||
-                    getFirstValue(snapshot, ["remarks"]) ||
-                    getFirstValue(raw, ["remarks"])
-                )}
-              />
-            </DetailSection>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-3 sm:p-4">
+      <div className="flex max-h-[90dvh] w-full max-w-[1050px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-950/20">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 sm:px-6">
+          <div className="min-w-0">
+            <p className="text-xs font-black uppercase tracking-wide text-emerald-600">
+              Payment Receipt
+            </p>
+            {receiptNo !== notAvailable ? (
+              <p className="mt-1 truncate text-sm font-semibold text-slate-500">
+                {receiptNo}
+              </p>
+            ) : null}
           </div>
-        )}
+
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={printLoading}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
+          {loading ? (
+            <ReceiptDetailsLoading />
+          ) : error ? (
+            <ErrorState
+              title="Unable to load receipt details."
+              message={error || "Unable to load receipt details."}
+              onRetry={onRetry}
+            />
+          ) : (
+            <div className="space-y-5">
+              <ReceiptSection title="Receipt Information" gridClassName="sm:grid-cols-3">
+                <SummaryDetail label="Receipt No" value={receiptNo} />
+                <SummaryDetail
+                  label="Payment No"
+                  value={valueOrReceiptFallback(
+                    getFirstValue(raw, ["payment_no", "paymentNo"]) ||
+                      getFirstValue(payment, ["payment_no", "paymentNo", "id"]) ||
+                      getFirstValue(snapshot, ["payment_no", "paymentNo"])
+                  )}
+                />
+                <SummaryDetail
+                  label="Procurement No"
+                  value={valueOrReceiptFallback(
+                    getFirstValue(raw, ["procurement_no", "procurementNo"]) ||
+                      getFirstValue(procurement, ["procurement_no", "procurementNo", "id"]) ||
+                      getFirstValue(snapshot, ["procurement_no", "procurementNo"])
+                  )}
+                />
+              </ReceiptSection>
+
+              <ReceiptSection title="Trader Details" gridClassName="sm:grid-cols-2">
+                <SummaryDetail
+                  label="Trader Name"
+                  value={valueOrReceiptFallback(
+                    getFirstValue(trader, ["trader_name", "traderName", "name"]) ||
+                      getFirstValue(snapshot, ["trader_name", "traderName"]) ||
+                      getFirstValue(raw, ["trader_name", "traderName"])
+                  )}
+                />
+                <SummaryDetail
+                  label="Trader Code"
+                  value={valueOrReceiptFallback(
+                    getFirstValue(trader, ["trader_code", "traderCode", "code"]) ||
+                      getFirstValue(snapshot, ["trader_code", "traderCode"]) ||
+                      getFirstValue(raw, ["trader_code", "traderCode"])
+                  )}
+                />
+                <SummaryDetail
+                  label="Trader GSTIN"
+                  value={valueOrReceiptFallback(
+                    getFirstValue(trader, ["trader_gstin", "traderGstin", "gstin"]) ||
+                      getFirstValue(snapshot, ["trader_gstin", "traderGstin", "gstin"]) ||
+                      getFirstValue(raw, ["trader_gstin", "traderGstin", "gstin"])
+                  )}
+                />
+                <SummaryDetail
+                  label="Authorized Signatory"
+                  value={valueOrReceiptFallback(
+                    getFirstValue(trader, ["authorized_signatory", "authorizedSignatory"]) ||
+                      getFirstValue(snapshot, ["authorized_signatory", "authorizedSignatory"]) ||
+                      getFirstValue(raw, ["authorized_signatory", "authorizedSignatory"])
+                  )}
+                />
+              </ReceiptSection>
+
+              <ReceiptSection title="Producer / Farmer" gridClassName="sm:grid-cols-2">
+                <SummaryDetail
+                  label="Producer / Farmer Name"
+                  value={valueOrReceiptFallback(
+                    getFirstValue(producer, ["producer_name", "producerName", "farmer_name", "farmerName", "name"]) ||
+                      getFirstValue(snapshot, ["producer_name", "producerName", "farmer_name", "farmerName"]) ||
+                      getFirstValue(raw, ["producer_name", "producerName", "farmer_name", "farmerName"])
+                  )}
+                />
+                <SummaryDetail
+                  label="Mobile"
+                  value={valueOrReceiptFallback(
+                    getFirstValue(producer, ["mobile", "phone", "farmer_mobile", "farmerMobile"]) ||
+                      getFirstValue(snapshot, ["mobile", "phone", "farmer_mobile", "farmerMobile"]) ||
+                      getFirstValue(raw, ["mobile", "phone", "farmer_mobile", "farmerMobile"])
+                  )}
+                />
+                <SummaryDetail
+                  label="Farm Name"
+                  value={valueOrReceiptFallback(
+                    getFirstValue(producer, ["farm_name", "farmName"]) ||
+                      getFirstValue(harvest, ["farm_name", "farmName"]) ||
+                      getFirstValue(snapshot, ["farm_name", "farmName"]) ||
+                      getFirstValue(raw, ["farm_name", "farmName"])
+                  )}
+                />
+                <SummaryDetail
+                  label="Harvest Reference"
+                  value={valueOrReceiptFallback(
+                    getFirstValue(harvest, ["harvest_code", "harvestCode", "request_code", "requestCode", "id"]) ||
+                      getFirstValue(procurement, ["harvest_code", "harvestCode", "harvest_id", "harvestId"]) ||
+                      getFirstValue(snapshot, ["harvest_code", "harvestCode", "harvest_id", "harvestId"]) ||
+                      getFirstValue(raw, ["harvest_code", "harvestCode", "harvest_id", "harvestId"])
+                  )}
+                />
+              </ReceiptSection>
+
+              <ReceiptSection title="Procurement / Settlement" gridClassName="sm:grid-cols-2 lg:grid-cols-5">
+                <SummaryDetail
+                  label="Procurement Value"
+                  value={formatOptionalCurrency(
+                    getFirstValue(snapshot, ["procurement_value", "procurementValue", "procurement_amount", "procurementAmount", "total_value", "totalValue"])
+                  )}
+                />
+                <SummaryDetail
+                  label="Paid Before"
+                  value={formatOptionalCurrency(
+                    getFirstValue(snapshot, ["paid_before", "paidBefore", "paid_before_amount", "paidBeforeAmount"])
+                  )}
+                />
+                <SummaryDetail
+                  label="Current Payment"
+                  className="border-emerald-200 bg-emerald-50"
+                  value={formatOptionalCurrency(
+                    getFirstValue(snapshot, ["current_payment", "currentPayment", "current_payment_amount", "currentPaymentAmount", "payment_amount", "paymentAmount"])
+                  )}
+                />
+                <SummaryDetail
+                  label="Paid After"
+                  value={formatOptionalCurrency(
+                    getFirstValue(snapshot, ["paid_after", "paidAfter", "paid_after_amount", "paidAfterAmount"])
+                  )}
+                />
+                <SummaryDetail
+                  label="Outstanding Balance"
+                  className="border-amber-200 bg-amber-50"
+                  value={formatOptionalCurrency(
+                    getFirstValue(snapshot, ["outstanding_balance", "outstandingBalance"])
+                  )}
+                />
+              </ReceiptSection>
+
+              <ReceiptSection title="Payment Information" gridClassName="sm:grid-cols-2 lg:grid-cols-3">
+                <SummaryDetail
+                  label="Payment Mode"
+                  value={valueOrReceiptFallback(
+                    getFirstValue(payment, ["payment_mode", "paymentMode"]) ||
+                      getFirstValue(snapshot, ["payment_mode", "paymentMode"]) ||
+                      getFirstValue(raw, ["payment_mode", "paymentMode"])
+                  )}
+                />
+                <SummaryDetail
+                  label="Bank Reference"
+                  value={valueOrReceiptFallback(
+                    getFirstValue(payment, ["bank_reference", "bankReference"]) ||
+                      getFirstValue(snapshot, ["bank_reference", "bankReference"]) ||
+                      getFirstValue(raw, ["bank_reference", "bankReference"])
+                  )}
+                />
+                <SummaryDetail
+                  label="Bank Name"
+                  value={valueOrReceiptFallback(
+                    getFirstValue(payment, ["bank_name", "bankName"]) ||
+                      getFirstValue(snapshot, ["bank_name", "bankName"]) ||
+                      getFirstValue(raw, ["bank_name", "bankName"])
+                  )}
+                />
+                <SummaryDetail
+                  label="Account Holder Name"
+                  value={valueOrReceiptFallback(
+                    getFirstValue(payment, ["account_holder_name", "accountHolderName"]) ||
+                      getFirstValue(snapshot, ["account_holder_name", "accountHolderName"]) ||
+                      getFirstValue(raw, ["account_holder_name", "accountHolderName"])
+                  )}
+                />
+                <SummaryDetail
+                  label="Paid At"
+                  value={formatDateTime(
+                    getFirstValue(payment, ["paid_at", "paidAt"]) ||
+                      getFirstValue(snapshot, ["paid_at", "paidAt"]) ||
+                      getFirstValue(raw, ["paid_at", "paidAt"])
+                  )}
+                />
+                <SummaryDetail
+                  label="Remarks"
+                  value={valueOrReceiptFallback(
+                    getFirstValue(payment, ["remarks"]) ||
+                      getFirstValue(snapshot, ["remarks"]) ||
+                      getFirstValue(raw, ["remarks"])
+                  )}
+                />
+              </ReceiptSection>
+            </div>
+          )}
+        </div>
 
         {printError ? (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+          <div className="mx-5 mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 sm:mx-6">
             {printError}
           </div>
         ) : null}
 
-        <ModalActions>
-          <TraderButton
-            type="button"
-            variant="secondary"
-            onClick={onClose}
-            disabled={printLoading}
-          >
-            Close
-          </TraderButton>
+        <div className="flex shrink-0 flex-col gap-3 border-t border-slate-200 bg-white p-5 sm:flex-row sm:justify-end sm:p-6">
           <TraderButton
             type="button"
             onClick={onPrint}
             disabled={loading || Boolean(error) || !receiptId || printLoading}
+            className="w-full sm:w-auto"
           >
             <Printer size={17} aria-hidden="true" />
             {printLoading ? "Preparing..." : "Print / Save PDF"}
           </TraderButton>
-        </ModalActions>
+        </div>
       </div>
-    </Modal>
+    </div>
   );
 }
-
 function SummaryCard({ label, value, icon: Icon, iconClass }) {
   return (
     <TraderCard className="p-4 sm:p-5">
@@ -2398,9 +2405,9 @@ function TabButton({ active, children, onClick }) {
   );
 }
 
-function TableHead({ children }) {
+function TableHead({ children, className = "" }) {
   return (
-    <th className="whitespace-nowrap px-5 py-4 text-xs font-black uppercase tracking-wide text-slate-500">
+    <th className={["whitespace-nowrap px-5 py-4 text-xs font-black uppercase tracking-wide text-slate-500", className].join(" ")}>
       {children}
     </th>
   );
@@ -2414,17 +2421,20 @@ function TableCell({ children, className = "" }) {
   );
 }
 
-function ProcurementTableRow({ procurement, onRecordPayment }) {
+function ProcurementTableRow({ procurement, onView, onRecordPayment }) {
   const recordPaymentAllowed = canRecordPayment(procurement);
 
   return (
     <tr className="hover:bg-slate-50">
-      <TableCell className="font-black text-slate-950">
-        {procurement.procurementNo}
+      <TableCell>
+        <p className="truncate font-black text-slate-950">{procurement.procurementNo}</p>
+        {procurement.harvest !== notAvailable ? (
+          <p className="mt-1 truncate text-xs font-semibold text-slate-500">
+            Harvest {procurement.harvest}
+          </p>
+        ) : null}
       </TableCell>
-      <TableCell>{procurement.harvest}</TableCell>
       <TableCell>{procurement.producer}</TableCell>
-      <TableCell>{formatWeight(procurement.actualWeight)}</TableCell>
       <TableCell className="font-bold text-slate-900">
         {formatCurrency(procurement.totalValue)}
       </TableCell>
@@ -2437,20 +2447,25 @@ function ProcurementTableRow({ procurement, onRecordPayment }) {
       </TableCell>
       <TableCell>
         <div className="flex items-center gap-2">
-          <TraderButton type="button" variant="secondary" disabled className="min-h-10 px-3">
-            <Eye size={16} aria-hidden="true" />
-            View
-          </TraderButton>
+          <button
+            type="button"
+            title="View Procurement"
+            aria-label="View procurement details"
+            onClick={() => onView(procurement)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
+          >
+            <Eye size={17} aria-hidden="true" />
+          </button>
           {recordPaymentAllowed ? (
-            <TraderButton
+            <button
               type="button"
-              variant="outline"
+              title="Record Payment"
+              aria-label="Record payment"
               onClick={() => onRecordPayment(procurement)}
-              className="min-h-10 px-3"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
             >
-              <CreditCard size={16} aria-hidden="true" />
-              Record Payment
-            </TraderButton>
+              <CreditCard size={17} aria-hidden="true" />
+            </button>
           ) : null}
         </div>
       </TableCell>
@@ -2458,7 +2473,7 @@ function ProcurementTableRow({ procurement, onRecordPayment }) {
   );
 }
 
-function ProcurementMobileCard({ procurement, onRecordPayment }) {
+function ProcurementMobileCard({ procurement, onView, onRecordPayment }) {
   const recordPaymentAllowed = canRecordPayment(procurement);
 
   return (
@@ -2497,7 +2512,14 @@ function ProcurementMobileCard({ procurement, onRecordPayment }) {
           recordPaymentAllowed ? "grid-cols-2" : "grid-cols-1",
         ].join(" ")}
       >
-        <TraderButton type="button" variant="secondary" disabled className="px-3">
+        <TraderButton
+          type="button"
+          variant="secondary"
+          onClick={() => onView(procurement)}
+          className="px-3"
+          title="View Procurement"
+          aria-label="View procurement details"
+        >
           <Eye size={16} aria-hidden="true" />
           View
         </TraderButton>
@@ -2507,6 +2529,8 @@ function ProcurementMobileCard({ procurement, onRecordPayment }) {
             variant="outline"
             onClick={() => onRecordPayment(procurement)}
             className="px-3"
+            title="Record Payment"
+            aria-label="Record payment"
           >
             <CreditCard size={16} aria-hidden="true" />
             Record Payment
@@ -2621,7 +2645,7 @@ function ReceiptMobileCard({ receipt, printLoading, onView, onPrint }) {
 function ProcurementTableLoading() {
   return Array.from({ length: 4 }).map((_, rowIndex) => (
     <tr key={rowIndex}>
-      {Array.from({ length: 9 }).map((__, cellIndex) => (
+      {Array.from({ length: 7 }).map((__, cellIndex) => (
         <td key={cellIndex} className="px-5 py-5">
           <div className="h-4 w-full max-w-28 animate-pulse rounded-full bg-slate-100" />
         </td>
@@ -2753,6 +2777,19 @@ function DetailSection({ title, children }) {
   );
 }
 
+function ReceiptSection({ title, children, gridClassName = "sm:grid-cols-2" }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">
+        {title}
+      </h3>
+      <div className={["mt-3 grid grid-cols-1 gap-3", gridClassName].join(" ")}>
+        {children}
+      </div>
+    </section>
+  );
+}
+
 function ModalActions({ children }) {
   return (
     <div className="flex flex-col-reverse gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:justify-end">
@@ -2761,9 +2798,9 @@ function ModalActions({ children }) {
   );
 }
 
-function SummaryDetail({ label, value }) {
+function SummaryDetail({ label, value, className = "" }) {
   return (
-    <div className="min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 py-3">
+    <div className={["min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 py-3", className].join(" ")}>
       <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
         {label}
       </p>

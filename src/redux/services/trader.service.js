@@ -155,6 +155,30 @@ function buildHarvestBookingPayload(payload = {}) {
   return body;
 }
 
+function buildPaymentReceiptQuery(params = {}) {
+  const query = new URLSearchParams();
+
+  if (params.trader_id !== undefined && params.trader_id !== null && params.trader_id !== "") {
+    query.set("trader_id", params.trader_id);
+  }
+
+  const queryString = query.toString();
+
+  return queryString ? `?${queryString}` : "";
+}
+
+function encodePathSegment(value) {
+  return encodeURIComponent(String(value));
+}
+
+function requirePathValue(value, message) {
+  if (value === undefined || value === null || value === "") {
+    throw new Error(message);
+  }
+
+  return encodePathSegment(value);
+}
+
 export const traderService = {
   login(payload = {}) {
     const mobile = cleanMobile(
@@ -298,6 +322,130 @@ export const traderService = {
     body: buildHarvestBookingPayload(payload),
   });
 },
+
+  completeHarvestForPayment(harvestId, payload = {}) {
+    const safeHarvestId = requirePathValue(
+      harvestId,
+      "Harvest reference is missing"
+    );
+
+    return httpClient(
+      `/api/payment-receipts/harvests/${safeHarvestId}/complete`,
+      {
+        method: "POST",
+        auth: true,
+        body: {
+          actual_harvest_weight_kg: payload.actual_harvest_weight_kg,
+          completed_at: payload.completed_at,
+        },
+      }
+    );
+  },
+
+  createPaymentProcurement(payload = {}) {
+    return httpClient("/api/payment-receipts/procurements", {
+      method: "POST",
+      auth: true,
+      body: {
+        harvest_id: payload.harvest_id,
+        rate_per_kg: payload.rate_per_kg,
+        adjustment_amount: payload.adjustment_amount,
+        tax_amount: payload.tax_amount,
+        payment_terms: payload.payment_terms,
+        trader_gstin: payload.trader_gstin,
+        authorized_signatory: payload.authorized_signatory,
+      },
+    });
+  },
+
+  getPaymentProcurements(params = {}) {
+    return httpClient(
+      `/api/payment-receipts/procurements${buildPaymentReceiptQuery(params)}`,
+      {
+        method: "GET",
+        auth: true,
+      }
+    );
+  },
+
+  recordProcurementPayment(procurementId, payload = {}, idempotencyKey) {
+    const safeProcurementId = requirePathValue(
+      procurementId,
+      "Procurement reference is missing"
+    );
+
+    return httpClient(
+      `/api/payment-receipts/procurements/${safeProcurementId}/payments`,
+      {
+        method: "POST",
+        auth: true,
+        headers: {
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: {
+          amount: payload.amount,
+          payment_mode: payload.payment_mode,
+          bank_reference: payload.bank_reference,
+          bank_name: payload.bank_name,
+          account_holder_name: payload.account_holder_name,
+          paid_at: payload.paid_at,
+          remarks: payload.remarks,
+        },
+      }
+    );
+  },
+
+  getPaymentReceipt(receiptId) {
+    const safeReceiptId = requirePathValue(
+      receiptId,
+      "Receipt reference is missing"
+    );
+
+    return httpClient(`/api/payment-receipts/receipts/${safeReceiptId}`, {
+      method: "GET",
+      auth: true,
+    });
+  },
+
+  getPaymentReceipts(params = {}) {
+    return httpClient(
+      `/api/payment-receipts/receipts${buildPaymentReceiptQuery(params)}`,
+      {
+        method: "GET",
+        auth: true,
+      }
+    );
+  },
+
+  getPaymentReceiptPrint(receiptId) {
+    const safeReceiptId = requirePathValue(
+      receiptId,
+      "Receipt reference is missing"
+    );
+
+    return httpClient(`/api/payment-receipts/receipts/${safeReceiptId}/print`, {
+      method: "GET",
+      auth: true,
+      headers: {
+        Accept: "text/html",
+      },
+    });
+  },
+
+  verifyPaymentReceipt(verificationToken) {
+    const safeVerificationToken = requirePathValue(
+      verificationToken,
+      "Receipt verification token is missing"
+    );
+
+    return httpClient(
+      `/api/payment-receipts/verify/${safeVerificationToken}`,
+      {
+        method: "GET",
+        auth: false,
+      }
+    );
+  },
 };
 
 export function registerTrader(payload) {
@@ -330,5 +478,14 @@ export const updateCrateStatus = traderService.updateCrateStatus;
 
 export const listHarvestRequests = traderService.getHarvestRequests;
 export const updateHarvestBooking = traderService.updateHarvestBooking;
+
+export const completeHarvestForPayment = traderService.completeHarvestForPayment;
+export const createPaymentProcurement = traderService.createPaymentProcurement;
+export const getPaymentProcurements = traderService.getPaymentProcurements;
+export const recordProcurementPayment = traderService.recordProcurementPayment;
+export const getPaymentReceipt = traderService.getPaymentReceipt;
+export const getPaymentReceipts = traderService.getPaymentReceipts;
+export const getPaymentReceiptPrint = traderService.getPaymentReceiptPrint;
+export const verifyPaymentReceipt = traderService.verifyPaymentReceipt;
 
 export default traderService;

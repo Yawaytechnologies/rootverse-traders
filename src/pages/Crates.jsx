@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 
 import { getCrates, updateCrateStatus } from "../redux/actions/trader.actions";
+import TraderSelect from "../components/ui/TraderSelect";
+import TraderStatusBadge from "../components/ui/TraderStatusBadge";
 
 const STATUS_OPTIONS = [
   { value: "packed", label: "Packed" },
@@ -174,7 +176,7 @@ export default function Crates() {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Crates</h1>
         <p className="text-sm text-gray-500">
@@ -195,7 +197,7 @@ export default function Crates() {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard title="Total Crates" value={stats.total} />
         <StatCard title="Packed" value={stats.packed} />
         <StatCard title="Scheduled" value={stats.scheduled} />
@@ -203,7 +205,7 @@ export default function Crates() {
         <StatCard title="Delivered" value={stats.delivered} />
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
         <div className="border-b border-gray-200 p-5">
           <h2 className="text-lg font-semibold text-gray-900">Crate List</h2>
           <p className="text-sm text-gray-500">
@@ -215,7 +217,7 @@ export default function Crates() {
           <div className="p-5 text-sm text-gray-500">Loading crates...</div>
         ) : null}
 
-        <div className="overflow-x-auto">
+        <div className="scrollbar-hidden max-w-full overflow-x-auto">
           <table className="w-full min-w-[1300px] text-left text-sm">
             <thead className="bg-gray-50 text-gray-600">
               <tr>
@@ -335,20 +337,19 @@ export default function Crates() {
                       </td>
 
                       <td className="px-4 py-3">
-                        <select
+                        <TraderSelect
                           value={String(currentStatus || "packed").toLowerCase()}
                           disabled={updatingId === crateId}
                           onChange={(e) =>
                             handleStatusUpdate(crate, e.target.value)
                           }
-                          className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600 disabled:bg-gray-100"
                         >
                           {STATUS_OPTIONS.map((item) => (
                             <option key={item.value} value={item.value}>
                               {item.label}
                             </option>
                           ))}
-                        </select>
+                        </TraderSelect>
                       </td>
                     </tr>
                   );
@@ -364,7 +365,7 @@ export default function Crates() {
 
 function StatCard({ title, value }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/60">
       <p className="text-sm text-gray-500">{title}</p>
       <h3 className="mt-2 text-2xl font-bold text-gray-900">{value}</h3>
     </div>
@@ -372,15 +373,7 @@ function StatCard({ title, value }) {
 }
 
 function StatusBadge({ value }) {
-  return (
-    <span
-      className={`rounded-full px-3 py-1 text-xs font-semibold ${getStatusClass(
-        value
-      )}`}
-    >
-      {getStatusLabel(value)}
-    </span>
-  );
+  return <TraderStatusBadge status={getStatusLabel(value)} />;
 }
 
 function SmallBadge({ value }) {
@@ -389,8 +382,6 @@ function SmallBadge({ value }) {
   }
 
   return (
-    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-      {getStatusLabel(value)}
-    </span>
+    <TraderStatusBadge status={getStatusLabel(value)} />
   );
 }

@@ -1,36 +1,55 @@
-export default function StatusBadge({ status }) {
-  const value = status || "Unknown";
+import TraderStatusBadge from "./ui/TraderStatusBadge";
 
-  const styles = {
-    Active: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    active: "bg-emerald-100 text-emerald-700 border-emerald-200",
+function getValue(row, key) {
+  return key.split(".").reduce((acc, item) => acc?.[item], row);
+}
 
-    Pending: "bg-yellow-100 text-yellow-700 border-yellow-200",
-    pending: "bg-yellow-100 text-yellow-700 border-yellow-200",
-
-    Packed: "bg-blue-100 text-blue-700 border-blue-200",
-    packed: "bg-blue-100 text-blue-700 border-blue-200",
-
-    Loaded: "bg-indigo-100 text-indigo-700 border-indigo-200",
-    loaded: "bg-indigo-100 text-indigo-700 border-indigo-200",
-
-    Received: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    received: "bg-emerald-100 text-emerald-700 border-emerald-200",
-
-    Rejected: "bg-red-100 text-red-700 border-red-200",
-    rejected: "bg-red-100 text-red-700 border-red-200",
-
-    Verified: "bg-emerald-100 text-emerald-700 border-emerald-200",
-    verified: "bg-emerald-100 text-emerald-700 border-emerald-200",
-  };
-
+export default function DataTable({ columns = [], data = [] }) {
   return (
-    <span
-      className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${
-        styles[value] || "bg-slate-100 text-slate-700 border-slate-200"
-      }`}
-    >
-      {value}
-    </span>
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
+      <div className="scrollbar-hidden max-w-full overflow-x-auto">
+        <table className="w-full min-w-[720px] text-left text-sm">
+          <thead className="bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
+            <tr>
+              {columns.map((column) => (
+                <th key={column.key} className="whitespace-nowrap px-4 py-3">
+                  {column.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {!Array.isArray(data) || data.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={columns.length || 1}
+                  className="px-4 py-10 text-center text-sm font-medium text-slate-500"
+                >
+                  No data found
+                </td>
+              </tr>
+            ) : (
+              data.map((row, rowIndex) => (
+                <tr key={row?.id || row?._id || rowIndex} className="transition hover:bg-slate-50/80">
+                  {columns.map((column) => {
+                    const value = getValue(row, column.key);
+
+                    return (
+                      <td key={column.key} className="whitespace-nowrap px-4 py-3 text-slate-700">
+                        {column.key.toLowerCase().includes("status") ? (
+                          <TraderStatusBadge status={value || "-"} />
+                        ) : (
+                          value || "-"
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

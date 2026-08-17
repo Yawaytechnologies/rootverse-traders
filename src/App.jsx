@@ -9,6 +9,7 @@ import CratePackers from "./pages/CratePackers";
 import TransportOperators from "./pages/TransportOperators";
 import Crates from "./pages/Crates";
 import Reports from "./pages/Reports";
+import Payments from "./pages/Payments";
 
 import TraderLayout from "./layouts/TraderLayout";
 import { isAuthenticated } from "./utils/auth";
@@ -41,6 +42,7 @@ const App = () => {
         >
            <Route path="/dashboard" element={<Dashboard />} />
   <Route path="/source-procurement" element={<SourceProcurement />} />
+  <Route path="/payments" element={<Payments />} />
   <Route path="/profile" element={<Profile />} />
   <Route path="/quality-checkers" element={<QualityCheckers />} />
   <Route path="/crate-packers" element={<CratePackers />} />

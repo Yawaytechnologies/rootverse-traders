@@ -7,6 +7,7 @@ import {
 } from "../redux/actions/trader.actions";
 
 import DataTable from "../components/DataTable";
+import TraderCard from "../components/ui/TraderCard";
 
 export default function Reports() {
   const dispatch = useDispatch();
@@ -30,12 +31,12 @@ export default function Reports() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-black text-slate-900">Reports</h1>
+      <TraderCard className="p-5 sm:p-6">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-950">Reports</h1>
         <p className="mt-2 text-sm text-slate-500">
           Basic report view using dashboard and crate APIs.
         </p>
-      </div>
+      </TraderCard>
 
       {loading && <p className="text-sm text-slate-500">Loading reports...</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -53,9 +54,9 @@ export default function Reports() {
 
 function ReportCard({ title, value }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <TraderCard className="p-5">
       <p className="text-sm font-bold text-slate-500">{title}</p>
-      <p className="mt-2 text-2xl font-black text-slate-900">{value}</p>
-    </div>
+      <p className="mt-2 text-2xl font-bold tracking-tight text-slate-950">{value}</p>
+    </TraderCard>
   );
 }

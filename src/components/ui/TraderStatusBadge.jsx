@@ -32,14 +32,34 @@ function getTone(status) {
   return "border-slate-200 bg-slate-100 text-slate-700";
 }
 
+function formatStatusLabel(status) {
+  const value = String(status || "").trim();
+
+  if (!value) return "Unknown";
+
+  const smallWords = new Set(["by", "for", "in", "of", "to", "at"]);
+
+  return value
+    .replace(/[_-]+/g, " ")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word, index) =>
+      index > 0 && smallWords.has(word)
+        ? word
+        : word.charAt(0).toUpperCase() + word.slice(1)
+    )
+    .join(" ");
+}
+
 export default function TraderStatusBadge({ status, children, className = "" }) {
-  const value = children || status || "Unknown";
+  const value = children || formatStatusLabel(status);
 
   return (
     <span
       className={[
         "inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-bold",
-        getTone(value),
+        getTone(status || value),
         className,
       ].join(" ")}
     >

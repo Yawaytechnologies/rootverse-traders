@@ -167,6 +167,20 @@ function buildPaymentReceiptQuery(params = {}) {
   return queryString ? `?${queryString}` : "";
 }
 
+function buildQueryString(params = {}) {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      query.set(key, value);
+    }
+  });
+
+  const queryString = query.toString();
+
+  return queryString ? `?${queryString}` : "";
+}
+
 function encodePathSegment(value) {
   return encodeURIComponent(String(value));
 }
@@ -257,6 +271,43 @@ export const traderService = {
     });
   },
 
+  getQualityInspections(params = {}) {
+    return httpClient(
+      `/api/aquaculture/quality-inspection${buildQueryString(params)}`,
+      {
+        method: "GET",
+        auth: true,
+      }
+    );
+  },
+
+  getQualityCheckerActivity(qualityCheckerId, params = {}) {
+    const safeQualityCheckerId = requirePathValue(
+      qualityCheckerId,
+      "Quality checker reference is missing"
+    );
+
+    return httpClient(
+      `/api/aquaculture/quality-inspection/checker/${safeQualityCheckerId}/activity${buildQueryString(params)}`,
+      {
+        method: "GET",
+        auth: true,
+      }
+    );
+  },
+
+  getQualityInspectionById(id) {
+    const safeId = requirePathValue(
+      id,
+      "Quality inspection reference is missing"
+    );
+
+    return httpClient(`/api/aquaculture/quality-inspection/${safeId}`, {
+      method: "GET",
+      auth: true,
+    });
+  },
+
   getCratePackers() {
     return httpClient("/api/traders/crate-packers", {
       method: "GET",
@@ -270,6 +321,36 @@ export const traderService = {
       auth: true,
       body: buildCratePackerPayload(payload),
     });
+  },
+
+  getCratePackerActivity(cratePackerId, params = {}) {
+    const safeCratePackerId = requirePathValue(
+      cratePackerId,
+      "Crate packer reference is missing"
+    );
+
+    return httpClient(
+      `/api/aquaculture/crate-packing/packer/${safeCratePackerId}/activity${buildQueryString(params)}`,
+      {
+        method: "GET",
+        auth: true,
+      }
+    );
+  },
+
+  getHarvestPackedCrates(harvestId) {
+    const safeHarvestId = requirePathValue(
+      harvestId,
+      "Harvest reference is missing"
+    );
+
+    return httpClient(
+      `/api/aquaculture/crate-packing/harvest/${safeHarvestId}/crates`,
+      {
+        method: "GET",
+        auth: true,
+      }
+    );
   },
 
   getTransportOperators() {
@@ -287,8 +368,45 @@ export const traderService = {
     });
   },
 
-  getCrates() {
-    return httpClient("/api/traders/crates", {
+  getTransportOperatorActivity(transportOperatorId, params = {}) {
+    const safeTransportOperatorId = requirePathValue(
+      transportOperatorId,
+      "Transport operator reference is missing"
+    );
+
+    return httpClient(
+      `/api/aquaculture/transport-loading/operator/${safeTransportOperatorId}/activity${buildQueryString(params)}`,
+      {
+        method: "GET",
+        auth: true,
+      }
+    );
+  },
+
+  getTransportHarvestProgress(harvestId) {
+    const safeHarvestId = requirePathValue(
+      harvestId,
+      "Harvest reference is missing"
+    );
+
+    return httpClient(
+      `/api/aquaculture/transport-loading/harvest/${safeHarvestId}/progress`,
+      {
+        method: "GET",
+        auth: true,
+      }
+    );
+  },
+
+  getTraderCrates(params = {}) {
+    return httpClient(`/api/traders/crates${buildQueryString(params)}`, {
+      method: "GET",
+      auth: true,
+    });
+  },
+
+  getCrates(params = {}) {
+    return httpClient(`/api/traders/crates${buildQueryString(params)}`, {
       method: "GET",
       auth: true,
     });
@@ -466,14 +584,24 @@ export const listLocationsByDistrict = traderService.getLocationsByDistrict;
 
 export const listQualityCheckers = traderService.getQualityCheckers;
 export const createQualityChecker = traderService.createQualityChecker;
+export const listQualityInspections = traderService.getQualityInspections;
+export const getQualityCheckerActivity =
+  traderService.getQualityCheckerActivity;
+export const getQualityInspectionById = traderService.getQualityInspectionById;
 
 export const listCratePackers = traderService.getCratePackers;
 export const createCratePacker = traderService.createCratePacker;
+export const getCratePackerActivity = traderService.getCratePackerActivity;
+export const getHarvestPackedCrates = traderService.getHarvestPackedCrates;
 
 export const listTransportOperators = traderService.getTransportOperators;
 export const createTransportOperator = traderService.createTransportOperator;
+export const getTransportOperatorActivity =
+  traderService.getTransportOperatorActivity;
+export const getTransportHarvestProgress =
+  traderService.getTransportHarvestProgress;
 
-export const listCrates = traderService.getCrates;
+export const listCrates = traderService.getTraderCrates;
 export const updateCrateStatus = traderService.updateCrateStatus;
 
 export const listHarvestRequests = traderService.getHarvestRequests;

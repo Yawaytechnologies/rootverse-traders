@@ -45,28 +45,23 @@ function extractUser(response) {
   );
 }
 
-function extractList(response, key) {
+function extractList(response, keys) {
   const data = response?.data || response;
+  const semanticKeys = Array.isArray(keys) ? keys : [keys].filter(Boolean);
 
   if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.[key])) return data[key];
-  if (Array.isArray(data?.data?.[key])) return data.data[key];
+
+  for (const key of semanticKeys) {
+    if (Array.isArray(data?.[key])) return data[key];
+    if (Array.isArray(data?.data?.[key])) return data.data[key];
+    if (Array.isArray(response?.[key])) return response[key];
+    if (Array.isArray(response?.data?.data?.[key])) return response.data.data[key];
+  }
 
   if (Array.isArray(data?.rows)) return data.rows;
   if (Array.isArray(data?.items)) return data.items;
   if (Array.isArray(data?.result)) return data.result;
   if (Array.isArray(data?.data)) return data.data;
-
-  if (Array.isArray(data?.qualityCheckers)) return data.qualityCheckers;
-  if (Array.isArray(data?.quality_checkers)) return data.quality_checkers;
-
-  if (Array.isArray(data?.cratePackers)) return data.cratePackers;
-  if (Array.isArray(data?.crate_packers)) return data.crate_packers;
-
-  if (Array.isArray(data?.transportOperators)) return data.transportOperators;
-  if (Array.isArray(data?.transport_operators)) return data.transport_operators;
-
-  if (Array.isArray(data?.crates)) return data.crates;
 
   return [];
 }
@@ -254,7 +249,7 @@ export const getQualityCheckers = () => async (dispatch) => {
 
     dispatch({
       type: QUALITY_CHECKERS_SUCCESS,
-      payload: extractList(response, "qualityCheckers"),
+      payload: extractList(response, ["quality_checkers", "qualityCheckers"]),
     });
 
     return response;
@@ -325,7 +320,7 @@ export const getCratePackers = () => async (dispatch) => {
 
     dispatch({
       type: CRATE_PACKERS_SUCCESS,
-      payload: extractList(response, "cratePackers"),
+      payload: extractList(response, ["crate_packers", "cratePackers"]),
     });
 
     return response;
@@ -401,7 +396,10 @@ export const getTransportOperators = () => async (dispatch) => {
 
     dispatch({
       type: TRANSPORT_OPERATORS_SUCCESS,
-      payload: extractList(response, "transportOperators"),
+      payload: extractList(response, [
+        "transport_operators",
+        "transportOperators",
+      ]),
     });
 
     return response;
@@ -484,15 +482,15 @@ export const createTransportOperator = (payload) => async (dispatch) => {
   }
 };
 
-export const getCrates = () => async (dispatch) => {
+export const getCrates = (params = {}) => async (dispatch) => {
   try {
     dispatch({ type: TRADER_LOADING });
 
-    const response = await traderService.getCrates();
+    const response = await traderService.getTraderCrates(params);
 
     dispatch({
       type: CRATES_SUCCESS,
-      payload: extractList(response, "crates"),
+      payload: extractList(response, ["crates", "rows", "items"]),
     });
 
     return response;

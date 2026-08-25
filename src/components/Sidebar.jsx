@@ -24,11 +24,6 @@ export const traderNavItems = [
     icon: PackageSearch,
   },
   {
-    title: "Payments",
-    path: "/payments",
-    icon: Wallet,
-  },
-  {
     title: "Quality Inspection",
     path: "/quality-checkers",
     icon: ClipboardCheck,
@@ -39,14 +34,19 @@ export const traderNavItems = [
     icon: Package,
   },
   {
+    title: "Transport Tracking",
+    path: "/transport-operators",
+    icon: Truck,
+  },
+  {
     title: "Dispatch Management",
     path: "/crates",
     icon: Boxes,
   },
   {
-    title: "Transport Tracking",
-    path: "/transport-operators",
-    icon: Truck,
+    title: "Payments",
+    path: "/payments",
+    icon: Wallet,
   },
   {
     title: "Reports",

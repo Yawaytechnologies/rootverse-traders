@@ -23,31 +23,21 @@ import TraderPageHeader from "../components/ui/TraderPageHeader";
 import TraderSelect from "../components/ui/TraderSelect";
 import TraderStatusBadge from "../components/ui/TraderStatusBadge";
 import TraderTextarea from "../components/ui/TraderTextarea";
+import {
+  formatCurrency,
+  formatOptionalCurrency,
+  formatWeight,
+  getFirstValue,
+  normalizeProcurement,
+  safeNumber,
+  unwrapProcurementList,
+  valueOrNotAvailable,
+} from "../utils/procurementPrint";
 
 const procurementStatuses = ["All", "CONFIRMED", "PARTIALLY_PAID", "PAID"];
 const paymentModes = ["All", "NEFT", "RTGS", "IMPS", "UPI", "CHEQUE", "CASH", "OTHER"];
 const recordPaymentModes = ["NEFT", "RTGS", "IMPS", "UPI", "CHEQUE", "CASH", "OTHER"];
 const notAvailable = "Not available";
-
-const currencyFormatter = new Intl.NumberFormat("en-IN", {
-  style: "currency",
-  currency: "INR",
-});
-
-function unwrapProcurementList(response) {
-  const data = response?.data || response;
-
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.data)) return data.data;
-  if (Array.isArray(data?.rows)) return data.rows;
-  if (Array.isArray(data?.items)) return data.items;
-  if (Array.isArray(data?.procurements)) return data.procurements;
-  if (Array.isArray(response?.rows)) return response.rows;
-  if (Array.isArray(response?.items)) return response.items;
-  if (Array.isArray(response?.procurements)) return response.procurements;
-
-  return [];
-}
 
 function unwrapReceiptList(response) {
   const data = response?.data || response;
@@ -90,49 +80,6 @@ function unwrapObject(response) {
     response ||
     null
   );
-}
-
-function safeNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : 0;
-}
-
-function formatCurrency(value) {
-  return currencyFormatter.format(safeNumber(value));
-}
-
-function valueOrNotAvailable(value) {
-  if (value === undefined || value === null || value === "") {
-    return notAvailable;
-  }
-
-  return String(value);
-}
-
-function getFirstValue(item = {}, keys = []) {
-  for (const key of keys) {
-    const value = item[key];
-
-    if (value !== undefined && value !== null && value !== "") {
-      return value;
-    }
-  }
-
-  return "";
-}
-
-function normalizeStatus(value) {
-  const status = String(value || "CONFIRMED").trim().toUpperCase();
-
-  if (status === "PARTIAL" || status === "PARTIAL_PAID") {
-    return "PARTIALLY_PAID";
-  }
-
-  if (status === "SETTLED") {
-    return "PAID";
-  }
-
-  return status || "CONFIRMED";
 }
 
 function normalizeHarvestCompletionStatus(value) {
@@ -200,19 +147,66 @@ function extractPaymentResult(response) {
   const payload = data?.data || data;
 
   return {
-    payment: payload?.payment || null,
-    receipt: payload?.receipt || null,
+    payment:
+      payload?.payment ||
+      payload?.payment_details ||
+      payload?.paymentDetails ||
+      payload?.payment_record ||
+      payload?.paymentRecord ||
+      payload?.procurement_payment ||
+      payload?.procurementPayment ||
+      null,
+    receipt:
+      payload?.receipt ||
+      payload?.payment_receipt ||
+      payload?.paymentReceipt ||
+      payload?.receipt_details ||
+      payload?.receiptDetails ||
+      null,
     idempotentReplay: Boolean(payload?.idempotent_replay),
   };
 }
 
-function unwrapReceiptDetails(response) {
+function unwrapReceiptPayload(response) {
   const data = response?.data || response || {};
-  return data?.data || data?.receipt || data;
+  return data?.data || data;
+}
+
+function unwrapReceiptDetails(response) {
+  const payload = unwrapReceiptPayload(response);
+
+  return (
+    payload?.receipt ||
+    payload?.payment_receipt ||
+    payload?.paymentReceipt ||
+    payload?.receipt_details ||
+    payload?.receiptDetails ||
+    payload
+  );
 }
 
 function objectOrEmpty(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function firstObject(...items) {
+  return (
+    items.find(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        !Array.isArray(item) &&
+        Object.keys(item).length > 0
+    ) || {}
+  );
+}
+
+function firstObjectFrom(value) {
+  if (Array.isArray(value)) {
+    return firstObject(...value);
+  }
+
+  return objectOrEmpty(value);
 }
 
 function valueOrReceiptFallback(value) {
@@ -231,14 +225,6 @@ function valueOrReceiptFallback(value) {
   return String(value);
 }
 
-function formatOptionalCurrency(value) {
-  if (value === undefined || value === null || value === "") {
-    return notAvailable;
-  }
-
-  return formatCurrency(value);
-}
-
 function formatDateTime(value) {
   if (!value) return notAvailable;
 
@@ -255,6 +241,7 @@ function formatDateTime(value) {
 }
 
 function normalizeReceiptDetails(response) {
+  const payload = objectOrEmpty(unwrapReceiptPayload(response));
   const receipt = objectOrEmpty(unwrapReceiptDetails(response));
   const snapshot = objectOrEmpty(
     receipt.snapshot ||
@@ -263,13 +250,41 @@ function normalizeReceiptDetails(response) {
       receipt.settlement_snapshot ||
       receipt.settlementSnapshot
   );
-  const payment = objectOrEmpty(
-    receipt.payment || receipt.payment_details || receipt.paymentDetails
+  const payloadPayment = firstObjectFrom(
+    payload.payment ||
+      payload.payment_details ||
+      payload.paymentDetails ||
+      payload.payment_record ||
+      payload.paymentRecord ||
+      payload.procurement_payment ||
+      payload.procurementPayment ||
+      payload.payments ||
+      payload.payment_records ||
+      payload.paymentRecords ||
+      payload.procurement_payments ||
+      payload.procurementPayments
+  );
+  const payment = firstObjectFrom(
+    receipt.payment ||
+      receipt.payment_details ||
+      receipt.paymentDetails ||
+      receipt.payment_record ||
+      receipt.paymentRecord ||
+      receipt.procurement_payment ||
+      receipt.procurementPayment ||
+      receipt.payments ||
+      receipt.payment_records ||
+      receipt.paymentRecords ||
+      receipt.procurement_payments ||
+      receipt.procurementPayments
   );
   const procurement = objectOrEmpty(
     receipt.procurement ||
       receipt.procurement_details ||
       receipt.procurementDetails ||
+      payload.procurement ||
+      payload.procurement_details ||
+      payload.procurementDetails ||
       snapshot.procurement
   );
   const trader = objectOrEmpty(
@@ -305,16 +320,350 @@ function normalizeReceiptDetails(response) {
       snapshot.harvest_request ||
       snapshot.harvestRequest
   );
+  const paymentSnapshot = firstObjectFrom(
+    snapshot.payment ||
+      snapshot.payment_details ||
+      snapshot.paymentDetails ||
+      snapshot.payment_record ||
+      snapshot.paymentRecord ||
+      snapshot.procurement_payment ||
+      snapshot.procurementPayment ||
+      snapshot.payments ||
+      snapshot.payment_records ||
+      snapshot.paymentRecords ||
+      snapshot.procurement_payments ||
+      snapshot.procurementPayments
+  );
+  const procurementSnapshot = objectOrEmpty(
+    snapshot.procurement ||
+      snapshot.procurement_details ||
+      snapshot.procurementDetails
+  );
+  const traderSnapshot = objectOrEmpty(
+    snapshot.trader || snapshot.trader_details || snapshot.traderDetails
+  );
+  const producerSnapshot = objectOrEmpty(
+    snapshot.producer ||
+      snapshot.farmer ||
+      snapshot.producer_details ||
+      snapshot.producerDetails ||
+      snapshot.farmer_details ||
+      snapshot.farmerDetails
+  );
+  const settlement = objectOrEmpty(
+    receipt.settlement ||
+      receipt.settlement_details ||
+      receipt.settlementDetails ||
+      snapshot.settlement ||
+      snapshot.settlement_details ||
+      snapshot.settlementDetails
+  );
+
+  const normalizedPayment = firstObject(payment, payloadPayment, paymentSnapshot);
+  const normalizedProcurement = firstObject(procurement, procurementSnapshot);
+  const normalizedTrader = firstObject(trader, traderSnapshot);
+  const normalizedProducer = firstObject(producer, producerSnapshot);
+
+  const receiptNo = valueOrReceiptFallback(
+    getFirstValue(receipt, ["receipt_no", "receiptNo"]) ||
+      getFirstValue(snapshot, ["receipt_no", "receiptNo"])
+  );
+  const procurementNo = valueOrReceiptFallback(
+    getFirstValue(receipt, ["procurement_no", "procurementNo"]) ||
+      getFirstValue(normalizedProcurement, [
+        "procurement_no",
+        "procurementNo",
+        "procurement_number",
+      ]) ||
+      getFirstValue(snapshot, ["procurement_no", "procurementNo"])
+  );
+  const harvestReference = valueOrReceiptFallback(
+    getFirstValue(receipt, [
+      "harvest_code",
+      "harvestCode",
+      "reference_code",
+      "referenceCode",
+      "harvest_reference",
+      "harvestReference",
+      "request_code",
+      "requestCode",
+    ]) ||
+      getFirstValue(harvest, [
+        "harvest_code",
+        "harvestCode",
+        "reference_code",
+        "referenceCode",
+        "harvest_reference",
+        "harvestReference",
+        "request_code",
+        "requestCode",
+        "booking_code",
+        "bookingCode",
+      ]) ||
+      getFirstValue(normalizedProcurement, [
+        "harvest_code",
+        "harvestCode",
+        "reference_code",
+        "referenceCode",
+        "harvest_reference",
+        "harvestReference",
+        "request_code",
+        "requestCode",
+      ]) ||
+      getFirstValue(snapshot, [
+        "harvest_code",
+        "harvestCode",
+        "reference_code",
+        "referenceCode",
+        "harvest_reference",
+        "harvestReference",
+        "request_code",
+        "requestCode",
+      ])
+  );
+  const currentPayment =
+    getFirstValue(receipt, [
+      "amount",
+      "payment_amount",
+      "paymentAmount",
+      "paid_amount",
+      "paidAmount",
+      "current_payment",
+      "currentPayment",
+    ]) ||
+    getFirstValue(normalizedPayment, [
+      "amount",
+      "payment_amount",
+      "paymentAmount",
+      "paid_amount",
+      "paidAmount",
+      "current_payment",
+      "currentPayment",
+    ]) ||
+    getFirstValue(settlement, [
+      "current_payment",
+      "currentPayment",
+      "current_payment_amount",
+      "currentPaymentAmount",
+      "payment_amount",
+      "paymentAmount",
+    ]) ||
+    getFirstValue(snapshot, [
+      "current_payment",
+      "currentPayment",
+      "current_payment_amount",
+      "currentPaymentAmount",
+      "payment_amount",
+      "paymentAmount",
+    ]);
+  const procurementValue =
+    getFirstValue(normalizedProcurement, [
+      "total_value",
+      "totalValue",
+      "procurement_value",
+      "procurementValue",
+      "procurement_amount",
+      "procurementAmount",
+    ]) ||
+    getFirstValue(settlement, [
+      "procurement_value",
+      "procurementValue",
+      "procurement_amount",
+      "procurementAmount",
+      "total_value",
+      "totalValue",
+    ]) ||
+    getFirstValue(snapshot, [
+      "procurement_value",
+      "procurementValue",
+      "procurement_amount",
+      "procurementAmount",
+      "total_value",
+      "totalValue",
+    ]);
 
   return {
     raw: receipt,
     snapshot,
-    payment,
-    procurement,
-    trader,
-    producer,
+    payment: normalizedPayment,
+    procurement: normalizedProcurement,
+    trader: normalizedTrader,
+    producer: normalizedProducer,
     harvest,
+    settlement,
+    id: getFirstValue(receipt, ["id", "receipt_id", "receiptId"]),
+    receiptNo,
+    paymentNo: valueOrReceiptFallback(
+      getFirstValue(receipt, ["payment_no", "paymentNo"]) ||
+        getFirstValue(normalizedPayment, ["payment_no", "paymentNo"])
+    ),
+    procurementId:
+      getFirstValue(receipt, ["procurement_id", "procurementId"]) ||
+      getFirstValue(normalizedPayment, ["procurement_id", "procurementId"]) ||
+      getFirstValue(normalizedProcurement, ["id", "procurement_id", "procurementId"]),
+    procurementNo,
+    harvestId:
+      getFirstValue(receipt, ["harvest_id", "harvestId"]) ||
+      getFirstValue(normalizedProcurement, ["harvest_id", "harvestId"]) ||
+      getFirstValue(harvest, ["id", "harvest_id", "harvestId"]),
+    harvestReference,
+    traderName: valueOrReceiptFallback(
+      getFirstValue(normalizedTrader, ["trader_name", "traderName", "name"]) ||
+        getFirstValue(snapshot, ["trader_name", "traderName"]) ||
+        getFirstValue(receipt, ["trader_name", "traderName"])
+    ),
+    traderCode: valueOrReceiptFallback(
+      getFirstValue(normalizedTrader, ["trader_code", "traderCode", "code"]) ||
+        getFirstValue(snapshot, ["trader_code", "traderCode"]) ||
+        getFirstValue(receipt, ["trader_code", "traderCode"])
+    ),
+    traderGstin: valueOrReceiptFallback(
+      getFirstValue(normalizedTrader, ["trader_gstin", "traderGstin", "gstin"]) ||
+        getFirstValue(snapshot, ["trader_gstin", "traderGstin", "gstin"]) ||
+        getFirstValue(receipt, ["trader_gstin", "traderGstin", "gstin"])
+    ),
+    authorizedSignatory: valueOrReceiptFallback(
+      getFirstValue(normalizedTrader, [
+        "authorized_signatory",
+        "authorizedSignatory",
+      ]) ||
+        getFirstValue(snapshot, ["authorized_signatory", "authorizedSignatory"]) ||
+        getFirstValue(receipt, ["authorized_signatory", "authorizedSignatory"])
+    ),
+    farmerName: valueOrReceiptFallback(
+      getFirstValue(normalizedProducer, [
+        "producer_name",
+        "producerName",
+        "farmer_name",
+        "farmerName",
+        "name",
+      ]) ||
+        getFirstValue(snapshot, [
+          "producer_name",
+          "producerName",
+          "farmer_name",
+          "farmerName",
+        ]) ||
+        getFirstValue(receipt, ["producer_name", "producerName", "farmer_name", "farmerName"])
+    ),
+    farmerMobile: valueOrReceiptFallback(
+      getFirstValue(normalizedProducer, [
+        "mobile",
+        "phone",
+        "farmer_mobile",
+        "farmerMobile",
+      ]) ||
+        getFirstValue(snapshot, ["mobile", "phone", "farmer_mobile", "farmerMobile"]) ||
+        getFirstValue(receipt, ["mobile", "phone", "farmer_mobile", "farmerMobile"])
+    ),
+    farmName: valueOrReceiptFallback(
+      getFirstValue(normalizedProducer, ["farm_name", "farmName"]) ||
+        getFirstValue(harvest, ["farm_name", "farmName"]) ||
+        getFirstValue(snapshot, ["farm_name", "farmName"]) ||
+        getFirstValue(receipt, ["farm_name", "farmName"])
+    ),
+    procurementValue,
+    paidBefore:
+      getFirstValue(settlement, ["paid_before", "paidBefore", "paid_before_amount", "paidBeforeAmount"]) ||
+      getFirstValue(snapshot, ["paid_before", "paidBefore", "paid_before_amount", "paidBeforeAmount"]),
+    currentPayment,
+    paidAfter:
+      getFirstValue(settlement, ["paid_after", "paidAfter", "paid_after_amount", "paidAfterAmount"]) ||
+      getFirstValue(snapshot, ["paid_after", "paidAfter", "paid_after_amount", "paidAfterAmount"]),
+    outstandingBalance:
+      getFirstValue(receipt, ["outstanding_balance", "outstandingBalance"]) ||
+      getFirstValue(settlement, ["outstanding_balance", "outstandingBalance"]) ||
+      getFirstValue(snapshot, ["outstanding_balance", "outstandingBalance"]),
+    paymentMode: valueOrReceiptFallback(
+      getFirstValue(normalizedPayment, ["mode", "payment_mode", "paymentMode"]) ||
+        getFirstValue(snapshot, ["mode", "payment_mode", "paymentMode"]) ||
+        getFirstValue(receipt, ["mode", "payment_mode", "paymentMode"])
+    ),
+    bankReference: valueOrReceiptFallback(
+      getFirstValue(normalizedPayment, [
+        "bank_reference",
+        "bankReference",
+        "transaction_reference",
+        "transactionReference",
+        "reference",
+      ]) ||
+        getFirstValue(snapshot, [
+          "bank_reference",
+          "bankReference",
+          "transaction_reference",
+          "transactionReference",
+          "reference",
+        ]) ||
+        getFirstValue(receipt, [
+          "bank_reference",
+          "bankReference",
+          "transaction_reference",
+          "transactionReference",
+          "reference",
+        ])
+    ),
+    bankName: valueOrReceiptFallback(
+      getFirstValue(normalizedPayment, ["bank_name", "bankName"]) ||
+        getFirstValue(snapshot, ["bank_name", "bankName"]) ||
+        getFirstValue(receipt, ["bank_name", "bankName"])
+    ),
+    accountHolderName: valueOrReceiptFallback(
+      getFirstValue(normalizedPayment, ["account_holder_name", "accountHolderName"]) ||
+        getFirstValue(snapshot, ["account_holder_name", "accountHolderName"]) ||
+        getFirstValue(receipt, ["account_holder_name", "accountHolderName"])
+    ),
+    paidAt:
+      getFirstValue(normalizedPayment, ["paid_at", "paidAt"]) ||
+      getFirstValue(normalizedPayment, ["created_at", "createdAt"]) ||
+      getFirstValue(snapshot, ["paid_at", "paidAt"]) ||
+      getFirstValue(snapshot, ["created_at", "createdAt"]) ||
+      getFirstValue(receipt, ["paid_at", "paidAt"]) ||
+      getFirstValue(receipt, ["created_at", "createdAt"]),
+    remarks: valueOrReceiptFallback(
+      getFirstValue(normalizedPayment, ["remarks"]) ||
+        getFirstValue(snapshot, ["remarks"]) ||
+        getFirstValue(receipt, ["remarks"])
+    ),
+    verificationToken: valueOrReceiptFallback(
+      getFirstValue(receipt, [
+        "verification_token",
+        "verificationToken",
+        "verify_token",
+        "verifyToken",
+      ]) ||
+        getFirstValue(snapshot, [
+          "verification_token",
+          "verificationToken",
+          "verify_token",
+          "verifyToken",
+        ])
+    ),
   };
+}
+
+function hasReceiptValue(value) {
+  if (value === undefined || value === null || value === "") return false;
+  if (value === notAvailable) return false;
+  if (typeof value === "number" && Number.isNaN(value)) return false;
+
+  return true;
+}
+
+function mergeReceiptDetailsFallback(receipt, fallback = {}) {
+  if (!fallback || typeof fallback !== "object") {
+    return receipt;
+  }
+
+  return Object.entries(fallback).reduce(
+    (merged, [key, value]) => {
+      if (!hasReceiptValue(merged[key]) && hasReceiptValue(value)) {
+        merged[key] = value;
+      }
+
+      return merged;
+    },
+    { ...receipt }
+  );
 }
 
 function unwrapPrintableHtml(response) {
@@ -331,12 +680,14 @@ function normalizeCompletedHarvest(item = {}) {
     getFirstValue(item, [
       "harvest_code",
       "harvestCode",
+      "reference_code",
+      "referenceCode",
+      "harvest_reference",
+      "harvestReference",
       "request_code",
       "requestCode",
       "booking_code",
       "bookingCode",
-      "qr_code",
-      "qrCode",
     ]) || notAvailable;
   const farmerName =
     getFirstValue(item, [
@@ -389,99 +740,6 @@ function normalizeCompletedHarvest(item = {}) {
   };
 }
 
-function normalizeProcurement(item = {}) {
-  const harvest = item.harvest || item.harvest_request || item.harvestRequest || {};
-  const producer =
-    item.producer ||
-    item.farmer ||
-    item.farmer_details ||
-    item.producer_details ||
-    harvest.producer ||
-    harvest.farmer ||
-    {};
-
-  const totalValue = safeNumber(item.total_value);
-  const totalPaid = safeNumber(item.total_paid);
-  const outstandingBalance = safeNumber(item.outstanding_balance);
-
-  const procurementNo = valueOrNotAvailable(
-    getFirstValue(item, ["procurement_no", "procurementNo", "procurement_number"])
-  );
-
-  const harvestLabel = valueOrNotAvailable(
-    getFirstValue(item, [
-      "harvest_code",
-      "harvestCode",
-      "harvest_no",
-      "harvestNo",
-      "harvest_id",
-      "harvestId",
-    ]) ||
-      getFirstValue(harvest, [
-        "harvest_code",
-        "harvestCode",
-        "request_code",
-        "requestCode",
-        "id",
-      ])
-  );
-
-  const producerLabel = valueOrNotAvailable(
-    getFirstValue(item, [
-      "producer_name",
-      "producerName",
-      "farmer_name",
-      "farmerName",
-    ]) ||
-      getFirstValue(producer, [
-        "producer_name",
-        "producerName",
-        "farmer_name",
-        "farmerName",
-        "name",
-        "full_name",
-        "fullName",
-      ])
-  );
-
-  return {
-    raw: item,
-    id: getFirstValue(item, ["id", "procurement_id", "procurementId"]),
-    procurementNo,
-    harvest: harvestLabel,
-    producer: producerLabel,
-    actualWeight: valueOrNotAvailable(
-      getFirstValue(item, [
-        "actual_harvest_weight_kg",
-        "actualHarvestWeightKg",
-        "actual_weight_kg",
-        "actualWeightKg",
-      ]) ||
-        getFirstValue(harvest, [
-          "actual_harvest_weight_kg",
-          "actualHarvestWeightKg",
-          "actual_weight_kg",
-          "actualWeightKg",
-        ])
-    ),
-    totalValue,
-    totalPaid,
-    outstandingBalance,
-    payments: Array.isArray(item.payments) ? item.payments : [],
-    status: normalizeStatus(item.status),
-    searchText: [
-      procurementNo,
-      harvestLabel,
-      producerLabel,
-      item.status,
-      item.id,
-    ]
-      .filter((value) => value && value !== notAvailable)
-      .join(" ")
-      .toLowerCase(),
-  };
-}
-
 function normalizeReceiptListItem(item = {}) {
   const snapshot = objectOrEmpty(
     item.snapshot ||
@@ -495,6 +753,17 @@ function normalizeReceiptListItem(item = {}) {
   );
   const procurement = objectOrEmpty(
     item.procurement || item.procurement_details || item.procurementDetails
+  );
+  const harvest = objectOrEmpty(
+    item.harvest ||
+      item.harvest_request ||
+      item.harvestRequest ||
+      procurement.harvest ||
+      procurement.harvest_request ||
+      procurement.harvestRequest ||
+      snapshot.harvest ||
+      snapshot.harvest_request ||
+      snapshot.harvestRequest
   );
   const producer = objectOrEmpty(
     item.producer ||
@@ -517,8 +786,60 @@ function normalizeReceiptListItem(item = {}) {
   );
   const procurementNo = valueOrNotAvailable(
     getFirstValue(item, ["procurement_no", "procurementNo"]) ||
-      getFirstValue(procurement, ["procurement_no", "procurementNo", "id"]) ||
+      getFirstValue(procurement, [
+        "procurement_no",
+        "procurementNo",
+        "procurement_number",
+      ]) ||
       getFirstValue(snapshot, ["procurement_no", "procurementNo"])
+  );
+  const procurementId =
+    getFirstValue(item, ["procurement_id", "procurementId"]) ||
+    getFirstValue(payment, ["procurement_id", "procurementId"]) ||
+    getFirstValue(procurement, ["id", "procurement_id", "procurementId"]);
+  const harvestReference = valueOrNotAvailable(
+    getFirstValue(item, [
+      "harvest_code",
+      "harvestCode",
+      "reference_code",
+      "referenceCode",
+      "harvest_reference",
+      "harvestReference",
+      "request_code",
+      "requestCode",
+    ]) ||
+      getFirstValue(harvest, [
+        "harvest_code",
+        "harvestCode",
+        "reference_code",
+        "referenceCode",
+        "harvest_reference",
+        "harvestReference",
+        "request_code",
+        "requestCode",
+        "booking_code",
+        "bookingCode",
+      ]) ||
+      getFirstValue(procurement, [
+        "harvest_code",
+        "harvestCode",
+        "reference_code",
+        "referenceCode",
+        "harvest_reference",
+        "harvestReference",
+        "request_code",
+        "requestCode",
+      ]) ||
+      getFirstValue(snapshot, [
+        "harvest_code",
+        "harvestCode",
+        "reference_code",
+        "referenceCode",
+        "harvest_reference",
+        "harvestReference",
+        "request_code",
+        "requestCode",
+      ])
   );
   const producerName = valueOrNotAvailable(
     getFirstValue(item, ["producer_name", "producerName", "farmer_name", "farmerName"]) ||
@@ -536,7 +857,7 @@ function normalizeReceiptListItem(item = {}) {
         "farmerName",
       ])
   );
-  const amount = getFirstValue(item, ["amount"]) ||
+  const amount = getFirstValue(item, ["amount", "payment_amount", "paymentAmount"]) ||
     getFirstValue(payment, ["amount"]) ||
     getFirstValue(snapshot, [
       "current_payment",
@@ -564,7 +885,9 @@ function normalizeReceiptListItem(item = {}) {
     id: getFirstValue(item, ["id", "receipt_id", "receiptId"]),
     receiptNo,
     paymentNo,
+    procurementId,
     procurementNo,
+    harvestReference,
     producer: producerName,
     amount,
     paymentMode,
@@ -574,6 +897,7 @@ function normalizeReceiptListItem(item = {}) {
       receiptNo,
       paymentNo,
       procurementNo,
+      harvestReference,
       producerName,
       paymentMode,
       item.id,
@@ -605,9 +929,10 @@ export default function Payments() {
   const [procurementsLoading, setProcurementsLoading] = useState(true);
   const [procurementsError, setProcurementsError] = useState("");
   const [receipts, setReceipts] = useState([]);
-  const [receiptsLoading, setReceiptsLoading] = useState(false);
+  const [receiptsLoading, setReceiptsLoading] = useState(true);
   const [receiptsError, setReceiptsError] = useState("");
   const [receiptsLoaded, setReceiptsLoaded] = useState(false);
+  const [selectedReceiptProcurement, setSelectedReceiptProcurement] = useState(null);
   const [selectedProcurement, setSelectedProcurement] = useState(null);
   const [selectedProcurementDetails, setSelectedProcurementDetails] = useState(null);
   const [createProcurementOpen, setCreateProcurementOpen] = useState(false);
@@ -624,6 +949,7 @@ export default function Payments() {
   const [createProcurementLoading, setCreateProcurementLoading] = useState(false);
   const [createProcurementError, setCreateProcurementError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [createdProcurement, setCreatedProcurement] = useState(null);
   const [recordPaymentOpen, setRecordPaymentOpen] = useState(false);
   const [receiptDetailsOpen, setReceiptDetailsOpen] = useState(false);
   const [selectedReceiptId, setSelectedReceiptId] = useState("");
@@ -667,9 +993,11 @@ export default function Payments() {
       const list = unwrapProcurementList(response).map(normalizeProcurement);
 
       setProcurements(list);
+      return list;
     } catch (error) {
       setProcurements([]);
       setProcurementsError(getErrorMessage(error));
+      return [];
     } finally {
       setProcurementsLoading(false);
     }
@@ -685,10 +1013,12 @@ export default function Payments() {
 
       setReceipts(list);
       setReceiptsLoaded(true);
+      return list;
     } catch (error) {
       setReceipts([]);
       setReceiptsError(getErrorMessage(error));
       setReceiptsLoaded(true);
+      return [];
     } finally {
       setReceiptsLoading(false);
     }
@@ -697,13 +1027,14 @@ export default function Payments() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       loadProcurements();
+      loadReceipts();
       loadLoggedTrader();
     }, 0);
 
     return () => {
       window.clearTimeout(timer);
     };
-  }, [loadLoggedTrader, loadProcurements]);
+  }, [loadLoggedTrader, loadProcurements, loadReceipts]);
 
   useEffect(() => {
     if (activeTab !== "receipts" || receiptsLoaded) return;
@@ -767,6 +1098,7 @@ export default function Payments() {
 
   const openCreateProcurementModal = useCallback(() => {
     resetCreateProcurementForm();
+    setCreatedProcurement(null);
     setCreateProcurementOpen(true);
     loadCompletedHarvests();
   }, [loadCompletedHarvests, resetCreateProcurementForm]);
@@ -816,7 +1148,7 @@ export default function Payments() {
     setSelectedProcurementDetails(null);
   }, []);
 
-  const openReceipt = useCallback(async (receiptId) => {
+  const openReceipt = useCallback(async (receiptId, detailFallback) => {
     setSelectedReceiptId(receiptId || "");
     setReceiptDetailsOpen(true);
     setReceiptDetails(null);
@@ -833,12 +1165,51 @@ export default function Payments() {
       setReceiptDetailsError("");
 
       const response = await traderService.getPaymentReceipt(receiptId);
-      setReceiptDetails(normalizeReceiptDetails(response));
+      const fallback = detailFallback || {};
+
+      setReceiptDetails(
+        mergeReceiptDetailsFallback(normalizeReceiptDetails(response), fallback)
+      );
     } catch (error) {
-      setReceiptDetailsError(getErrorMessage(error));
+      setReceiptDetailsError(getErrorMessage(error) || "Unable to load payment receipt.");
     } finally {
       setReceiptDetailsLoading(false);
     }
+  }, []);
+
+  const receiptsByProcurement = useMemo(() => {
+    return receipts.reduce((lookup, receipt) => {
+      if (!receipt.procurementId) return lookup;
+
+      const key = String(receipt.procurementId);
+      const current = lookup.get(key) || [];
+
+      lookup.set(key, [...current, receipt]);
+      return lookup;
+    }, new Map());
+  }, [receipts]);
+
+  const openProcurementReceipts = useCallback(
+    (procurement) => {
+      if (!procurement?.id || receiptsLoading || receiptsError) return;
+
+      const procurementReceipts =
+        receiptsByProcurement.get(String(procurement.id)) || [];
+
+      if (procurementReceipts.length === 1) {
+        openReceipt(procurementReceipts[0].id);
+        return;
+      }
+
+      if (procurementReceipts.length > 1) {
+        setSelectedReceiptProcurement(procurement);
+      }
+    },
+    [openReceipt, receiptsByProcurement, receiptsError, receiptsLoading]
+  );
+
+  const closeProcurementReceiptsModal = useCallback(() => {
+    setSelectedReceiptProcurement(null);
   }, []);
 
   const closeReceiptDetailsModal = useCallback(() => {
@@ -957,7 +1328,7 @@ export default function Payments() {
         setCreateProcurementError("");
         setSuccessMessage("");
 
-        await traderService.createPaymentProcurement({
+        const response = await traderService.createPaymentProcurement({
           harvest_id: selectedHarvestId,
           rate_per_kg: rate,
           adjustment_amount: adjustment,
@@ -967,9 +1338,24 @@ export default function Payments() {
           authorized_signatory: authorizedSignatory.trim(),
         });
 
-        await loadProcurements();
+        const list = await loadProcurements();
+        const createdRaw =
+          response?.data?.data?.procurement ||
+          response?.data?.procurement ||
+          response?.data?.data ||
+          response?.data ||
+          response?.procurement ||
+          null;
+        const normalizedCreated =
+          createdRaw && typeof createdRaw === "object"
+            ? normalizeProcurement(createdRaw)
+            : null;
+        const createdFromList = normalizedCreated?.id
+          ? list.find((item) => sameId(item.id, normalizedCreated.id))
+          : null;
 
         setSuccessMessage("Procurement created successfully.");
+        setCreatedProcurement(createdFromList || normalizedCreated);
         setCreateProcurementOpen(false);
         resetCreateProcurementForm();
       } catch (error) {
@@ -1060,9 +1446,131 @@ export default function Payments() {
         );
 
         const result = extractPaymentResult(response);
+        const newReceiptId =
+          getFirstValue(result.receipt || {}, [
+            "id",
+            "receipt_id",
+            "receiptId",
+          ]) ||
+          getFirstValue(result.payment || {}, [
+            "receipt_id",
+            "receiptId",
+            "payment_receipt_id",
+            "paymentReceiptId",
+          ]);
+        const paymentResponseFallback = {
+          id: newReceiptId,
+          receiptNo: getFirstValue(result.receipt || {}, [
+            "receipt_no",
+            "receiptNo",
+          ]),
+          paymentNo: getFirstValue(result.payment || {}, [
+            "payment_no",
+            "paymentNo",
+          ]),
+          procurementId: selectedProcurement.id,
+          procurementNo: selectedProcurement.procurementNo,
+          harvestReference: selectedProcurement.harvest,
+          farmerName: selectedProcurement.producer,
+          procurementValue: selectedProcurement.totalValue,
+          paidBefore: getFirstValue(result.receipt || {}, [
+            "paid_before",
+            "paidBefore",
+            "paid_before_amount",
+            "paidBeforeAmount",
+          ]),
+          currentPayment:
+            getFirstValue(result.payment || {}, [
+              "amount",
+              "payment_amount",
+              "paymentAmount",
+              "paid_amount",
+              "paidAmount",
+              "current_payment",
+              "currentPayment",
+            ]) ||
+            getFirstValue(result.receipt || {}, [
+              "amount",
+              "payment_amount",
+              "paymentAmount",
+              "paid_amount",
+              "paidAmount",
+              "current_payment",
+              "currentPayment",
+            ]),
+          paidAfter: getFirstValue(result.receipt || {}, [
+            "paid_after",
+            "paidAfter",
+            "paid_after_amount",
+            "paidAfterAmount",
+          ]),
+          outstandingBalance: getFirstValue(result.receipt || {}, [
+            "outstanding_balance",
+            "outstandingBalance",
+          ]),
+          paymentMode:
+            getFirstValue(result.payment || {}, ["mode", "payment_mode", "paymentMode"]) ||
+            getFirstValue(result.receipt || {}, ["mode", "payment_mode", "paymentMode"]),
+          bankReference:
+            getFirstValue(result.payment || {}, [
+              "bank_reference",
+              "bankReference",
+              "transaction_reference",
+              "transactionReference",
+              "reference",
+            ]) ||
+            getFirstValue(result.receipt || {}, [
+              "bank_reference",
+              "bankReference",
+              "transaction_reference",
+              "transactionReference",
+              "reference",
+            ]),
+          bankName:
+            getFirstValue(result.payment || {}, ["bank_name", "bankName"]) ||
+            getFirstValue(result.receipt || {}, ["bank_name", "bankName"]),
+          accountHolderName:
+            getFirstValue(result.payment || {}, [
+              "account_holder_name",
+              "accountHolderName",
+            ]) ||
+            getFirstValue(result.receipt || {}, [
+              "account_holder_name",
+              "accountHolderName",
+            ]),
+          paidAt:
+            getFirstValue(result.payment || {}, [
+              "paid_at",
+              "paidAt",
+              "created_at",
+              "createdAt",
+            ]) ||
+            getFirstValue(result.receipt || {}, [
+              "paid_at",
+              "paidAt",
+              "created_at",
+              "createdAt",
+            ]),
+          remarks:
+            getFirstValue(result.payment || {}, ["remarks"]) ||
+            getFirstValue(result.receipt || {}, ["remarks"]),
+        };
+        const submittedReceiptFallback = mergeReceiptDetailsFallback(
+          paymentResponseFallback,
+          {
+            currentPayment: amount,
+            paymentMode: recordPaymentMode,
+            bankReference: bankReference.trim(),
+            bankName: bankName.trim(),
+            accountHolderName: accountHolderName.trim(),
+            paidAt: paidAtDate.toISOString(),
+            remarks: paymentRemarks.trim(),
+          }
+        );
 
         setPaymentResult(result);
         await loadProcurements();
+        await loadReceipts();
         setPaymentAmount("");
         setRecordPaymentMode("");
         setBankReference("");
@@ -1071,6 +1579,14 @@ export default function Payments() {
         setPaidAt(getLocalDateTimeValue());
         setPaymentRemarks("");
         setPaymentIdempotencyKey("");
+        setRecordPaymentOpen(false);
+        setSelectedProcurement(null);
+        setCreatedProcurement(null);
+        setSuccessMessage("Payment recorded successfully.");
+
+        if (newReceiptId) {
+          openReceipt(newReceiptId, submittedReceiptFallback);
+        }
       } catch (error) {
         setPaymentError(getErrorMessage(error) || "Unable to record payment.");
       } finally {
@@ -1082,6 +1598,8 @@ export default function Payments() {
       bankName,
       bankReference,
       loadProcurements,
+      loadReceipts,
+      openReceipt,
       paidAt,
       paymentAmount,
       paymentIdempotencyKey,
@@ -1188,10 +1706,15 @@ export default function Payments() {
           loading={procurementsLoading}
           error={procurementsError}
           successMessage={successMessage}
+          createdProcurement={createdProcurement}
+          receiptsByProcurement={receiptsByProcurement}
+          receiptsLoading={receiptsLoading}
+          receiptsError={receiptsError}
           onRefresh={loadProcurements}
           onCreateProcurement={openCreateProcurementModal}
           onViewProcurement={openProcurementDetails}
           onRecordPayment={openRecordPaymentModal}
+          onViewProcurementReceipts={openProcurementReceipts}
         />
       ) : (
         <ReceiptsTab
@@ -1269,6 +1792,23 @@ export default function Payments() {
         procurement={selectedProcurementDetails}
         onClose={closeProcurementDetails}
       />
+      <ProcurementReceiptsModal
+        open={Boolean(selectedReceiptProcurement)}
+        procurement={selectedReceiptProcurement}
+        receipts={
+          selectedReceiptProcurement?.id
+            ? receiptsByProcurement.get(String(selectedReceiptProcurement.id)) || []
+            : []
+        }
+        printLoading={receiptPrintLoading}
+        printError={receiptPrintError}
+        onClose={closeProcurementReceiptsModal}
+        onView={(receiptId) => {
+          closeProcurementReceiptsModal();
+          openReceipt(receiptId);
+        }}
+        onPrint={handlePrintReceipt}
+      />
       <ReceiptDetailsModal
         open={receiptDetailsOpen}
         onClose={closeReceiptDetailsModal}
@@ -1295,10 +1835,15 @@ function ProcurementsTab({
   loading,
   error,
   successMessage,
+  createdProcurement,
+  receiptsByProcurement,
+  receiptsLoading,
+  receiptsError,
   onRefresh,
   onCreateProcurement,
   onViewProcurement,
   onRecordPayment,
+  onViewProcurementReceipts,
 }) {
   const hasProcurements = procurements.length > 0;
 
@@ -1374,24 +1919,45 @@ function ProcurementsTab({
 
           {successMessage ? (
             <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-              {successMessage}
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <span>{successMessage}</span>
+                {createdProcurement?.id ? (
+                  <div className="flex flex-wrap gap-2">
+                    <TraderButton
+                      type="button"
+                      variant="secondary"
+                      onClick={() => onViewProcurement(createdProcurement)}
+                      className="h-9 px-3 text-xs"
+                    >
+                      <Eye size={15} aria-hidden="true" />
+                      View Procurement
+                    </TraderButton>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          {receiptsError ? (
+            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+              Payment receipt status is unavailable. Receipt actions are disabled until receipts load.
             </div>
           ) : null}
         </div>
 
         <div className="hidden p-4 sm:block sm:p-5">
-          <div className="overflow-hidden rounded-2xl border border-slate-200">
-            <div className="max-w-full overflow-hidden">
-              <table className="w-full table-fixed divide-y divide-slate-200 text-left">
+          <div className="rounded-2xl border border-slate-200">
+            <div className="w-full overflow-hidden">
+              <table className="w-full divide-y divide-slate-200 text-left">
                 <thead className="bg-slate-50">
                   <tr>
-                    <TableHead className="w-[24%]">Procurement</TableHead>
+                    <TableHead className="w-[12%]">Procurement</TableHead>
                     <TableHead className="w-[18%]">Producer / Farmer</TableHead>
-                    <TableHead>Total Value</TableHead>
-                    <TableHead>Paid</TableHead>
-                    <TableHead>Outstanding</TableHead>
-                    <TableHead className="w-[13%]">Status</TableHead>
-                    <TableHead className="w-[12%]">Actions</TableHead>
+                    <TableHead className="w-[15%] text-right">Total Value</TableHead>
+                    <TableHead className="w-[12%] text-right">Paid</TableHead>
+                    <TableHead className="w-[15%] text-right">Outstanding</TableHead>
+                    <TableHead className="w-[12%] text-center">Status</TableHead>
+                    <TableHead className="w-[16%] text-center">Actions</TableHead>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
@@ -1408,8 +1974,12 @@ function ProcurementsTab({
                       <ProcurementTableRow
                         key={item.id || `${item.procurementNo}-${index}`}
                         procurement={item}
+                        receipts={receiptsByProcurement.get(String(item.id)) || []}
+                        receiptsLoading={receiptsLoading}
+                        receiptsError={receiptsError}
                         onView={onViewProcurement}
                         onRecordPayment={onRecordPayment}
+                        onViewReceipts={onViewProcurementReceipts}
                       />
                     ))
                   ) : (
@@ -1440,8 +2010,12 @@ function ProcurementsTab({
                 <ProcurementMobileCard
                   key={item.id || `${item.procurementNo}-${index}`}
                   procurement={item}
+                  receipts={receiptsByProcurement.get(String(item.id)) || []}
+                  receiptsLoading={receiptsLoading}
+                  receiptsError={receiptsError}
                   onView={onViewProcurement}
                   onRecordPayment={onRecordPayment}
+                  onViewReceipts={onViewProcurementReceipts}
                 />
               ))}
             </div>
@@ -1778,7 +2352,7 @@ function CreateProcurementModal({
               {formatCurrency(estimatedGrossAmount)}
             </p>
             <p className="mt-1 text-xs font-semibold text-blue-700">
-              Backend calculation remains authoritative.
+              Final settlement will use the confirmed system calculation.
             </p>
           </div>
         ) : null}
@@ -2024,7 +2598,11 @@ function RecordPaymentModal({
   );
 }
 
-function ProcurementDetailsModal({ open, procurement, onClose }) {
+function ProcurementDetailsModal({
+  open,
+  procurement,
+  onClose,
+}) {
   const raw = procurement?.raw || {};
 
   return (
@@ -2113,17 +2691,7 @@ function ReceiptDetailsModal({
   printError,
   onPrint,
 }) {
-  const raw = receipt?.raw || {};
-  const snapshot = receipt?.snapshot || {};
-  const payment = receipt?.payment || {};
-  const procurement = receipt?.procurement || {};
-  const trader = receipt?.trader || {};
-  const producer = receipt?.producer || {};
-  const harvest = receipt?.harvest || {};
-  const receiptNo = valueOrReceiptFallback(
-    getFirstValue(raw, ["receipt_no", "receiptNo"]) ||
-      getFirstValue(snapshot, ["receipt_no", "receiptNo"])
-  );
+  const receiptNo = receipt?.receiptNo || notAvailable;
 
   if (!open) return null;
 
@@ -2165,180 +2733,56 @@ function ReceiptDetailsModal({
             <div className="space-y-5">
               <ReceiptSection title="Receipt Information" gridClassName="sm:grid-cols-3">
                 <SummaryDetail label="Receipt No" value={receiptNo} />
-                <SummaryDetail
-                  label="Payment No"
-                  value={valueOrReceiptFallback(
-                    getFirstValue(raw, ["payment_no", "paymentNo"]) ||
-                      getFirstValue(payment, ["payment_no", "paymentNo", "id"]) ||
-                      getFirstValue(snapshot, ["payment_no", "paymentNo"])
-                  )}
-                />
-                <SummaryDetail
-                  label="Procurement No"
-                  value={valueOrReceiptFallback(
-                    getFirstValue(raw, ["procurement_no", "procurementNo"]) ||
-                      getFirstValue(procurement, ["procurement_no", "procurementNo", "id"]) ||
-                      getFirstValue(snapshot, ["procurement_no", "procurementNo"])
-                  )}
-                />
+                <SummaryDetail label="Payment No" value={receipt?.paymentNo || notAvailable} />
+                <SummaryDetail label="Procurement No" value={receipt?.procurementNo || notAvailable} />
               </ReceiptSection>
 
               <ReceiptSection title="Trader Details" gridClassName="sm:grid-cols-2">
-                <SummaryDetail
-                  label="Trader Name"
-                  value={valueOrReceiptFallback(
-                    getFirstValue(trader, ["trader_name", "traderName", "name"]) ||
-                      getFirstValue(snapshot, ["trader_name", "traderName"]) ||
-                      getFirstValue(raw, ["trader_name", "traderName"])
-                  )}
-                />
-                <SummaryDetail
-                  label="Trader Code"
-                  value={valueOrReceiptFallback(
-                    getFirstValue(trader, ["trader_code", "traderCode", "code"]) ||
-                      getFirstValue(snapshot, ["trader_code", "traderCode"]) ||
-                      getFirstValue(raw, ["trader_code", "traderCode"])
-                  )}
-                />
-                <SummaryDetail
-                  label="Trader GSTIN"
-                  value={valueOrReceiptFallback(
-                    getFirstValue(trader, ["trader_gstin", "traderGstin", "gstin"]) ||
-                      getFirstValue(snapshot, ["trader_gstin", "traderGstin", "gstin"]) ||
-                      getFirstValue(raw, ["trader_gstin", "traderGstin", "gstin"])
-                  )}
-                />
-                <SummaryDetail
-                  label="Authorized Signatory"
-                  value={valueOrReceiptFallback(
-                    getFirstValue(trader, ["authorized_signatory", "authorizedSignatory"]) ||
-                      getFirstValue(snapshot, ["authorized_signatory", "authorizedSignatory"]) ||
-                      getFirstValue(raw, ["authorized_signatory", "authorizedSignatory"])
-                  )}
-                />
+                <SummaryDetail label="Trader Name" value={receipt?.traderName || notAvailable} />
+                <SummaryDetail label="Trader Code" value={receipt?.traderCode || notAvailable} />
+                <SummaryDetail label="Trader GSTIN" value={receipt?.traderGstin || notAvailable} />
+                <SummaryDetail label="Authorized Signatory" value={receipt?.authorizedSignatory || notAvailable} />
               </ReceiptSection>
 
               <ReceiptSection title="Producer / Farmer" gridClassName="sm:grid-cols-2">
-                <SummaryDetail
-                  label="Producer / Farmer Name"
-                  value={valueOrReceiptFallback(
-                    getFirstValue(producer, ["producer_name", "producerName", "farmer_name", "farmerName", "name"]) ||
-                      getFirstValue(snapshot, ["producer_name", "producerName", "farmer_name", "farmerName"]) ||
-                      getFirstValue(raw, ["producer_name", "producerName", "farmer_name", "farmerName"])
-                  )}
-                />
-                <SummaryDetail
-                  label="Mobile"
-                  value={valueOrReceiptFallback(
-                    getFirstValue(producer, ["mobile", "phone", "farmer_mobile", "farmerMobile"]) ||
-                      getFirstValue(snapshot, ["mobile", "phone", "farmer_mobile", "farmerMobile"]) ||
-                      getFirstValue(raw, ["mobile", "phone", "farmer_mobile", "farmerMobile"])
-                  )}
-                />
-                <SummaryDetail
-                  label="Farm Name"
-                  value={valueOrReceiptFallback(
-                    getFirstValue(producer, ["farm_name", "farmName"]) ||
-                      getFirstValue(harvest, ["farm_name", "farmName"]) ||
-                      getFirstValue(snapshot, ["farm_name", "farmName"]) ||
-                      getFirstValue(raw, ["farm_name", "farmName"])
-                  )}
-                />
-                <SummaryDetail
-                  label="Harvest Reference"
-                  value={valueOrReceiptFallback(
-                    getFirstValue(harvest, ["harvest_code", "harvestCode", "request_code", "requestCode", "id"]) ||
-                      getFirstValue(procurement, ["harvest_code", "harvestCode", "harvest_id", "harvestId"]) ||
-                      getFirstValue(snapshot, ["harvest_code", "harvestCode", "harvest_id", "harvestId"]) ||
-                      getFirstValue(raw, ["harvest_code", "harvestCode", "harvest_id", "harvestId"])
-                  )}
-                />
+                <SummaryDetail label="Producer / Farmer Name" value={receipt?.farmerName || notAvailable} />
+                <SummaryDetail label="Mobile" value={receipt?.farmerMobile || notAvailable} />
+                <SummaryDetail label="Farm Name" value={receipt?.farmName || notAvailable} />
+                <SummaryDetail label="Harvest Reference" value={receipt?.harvestReference || notAvailable} />
               </ReceiptSection>
 
               <ReceiptSection title="Procurement / Settlement" gridClassName="sm:grid-cols-2 lg:grid-cols-5">
                 <SummaryDetail
                   label="Procurement Value"
-                  value={formatOptionalCurrency(
-                    getFirstValue(snapshot, ["procurement_value", "procurementValue", "procurement_amount", "procurementAmount", "total_value", "totalValue"])
-                  )}
+                  value={formatOptionalCurrency(receipt?.procurementValue)}
                 />
                 <SummaryDetail
                   label="Paid Before"
-                  value={formatOptionalCurrency(
-                    getFirstValue(snapshot, ["paid_before", "paidBefore", "paid_before_amount", "paidBeforeAmount"])
-                  )}
+                  value={formatOptionalCurrency(receipt?.paidBefore)}
                 />
                 <SummaryDetail
                   label="Current Payment"
                   className="border-emerald-200 bg-emerald-50"
-                  value={formatOptionalCurrency(
-                    getFirstValue(snapshot, ["current_payment", "currentPayment", "current_payment_amount", "currentPaymentAmount", "payment_amount", "paymentAmount"])
-                  )}
+                  value={formatOptionalCurrency(receipt?.currentPayment)}
                 />
                 <SummaryDetail
                   label="Paid After"
-                  value={formatOptionalCurrency(
-                    getFirstValue(snapshot, ["paid_after", "paidAfter", "paid_after_amount", "paidAfterAmount"])
-                  )}
+                  value={formatOptionalCurrency(receipt?.paidAfter)}
                 />
                 <SummaryDetail
                   label="Outstanding Balance"
                   className="border-amber-200 bg-amber-50"
-                  value={formatOptionalCurrency(
-                    getFirstValue(snapshot, ["outstanding_balance", "outstandingBalance"])
-                  )}
+                  value={formatOptionalCurrency(receipt?.outstandingBalance)}
                 />
               </ReceiptSection>
 
               <ReceiptSection title="Payment Information" gridClassName="sm:grid-cols-2 lg:grid-cols-3">
-                <SummaryDetail
-                  label="Payment Mode"
-                  value={valueOrReceiptFallback(
-                    getFirstValue(payment, ["payment_mode", "paymentMode"]) ||
-                      getFirstValue(snapshot, ["payment_mode", "paymentMode"]) ||
-                      getFirstValue(raw, ["payment_mode", "paymentMode"])
-                  )}
-                />
-                <SummaryDetail
-                  label="Bank Reference"
-                  value={valueOrReceiptFallback(
-                    getFirstValue(payment, ["bank_reference", "bankReference"]) ||
-                      getFirstValue(snapshot, ["bank_reference", "bankReference"]) ||
-                      getFirstValue(raw, ["bank_reference", "bankReference"])
-                  )}
-                />
-                <SummaryDetail
-                  label="Bank Name"
-                  value={valueOrReceiptFallback(
-                    getFirstValue(payment, ["bank_name", "bankName"]) ||
-                      getFirstValue(snapshot, ["bank_name", "bankName"]) ||
-                      getFirstValue(raw, ["bank_name", "bankName"])
-                  )}
-                />
-                <SummaryDetail
-                  label="Account Holder Name"
-                  value={valueOrReceiptFallback(
-                    getFirstValue(payment, ["account_holder_name", "accountHolderName"]) ||
-                      getFirstValue(snapshot, ["account_holder_name", "accountHolderName"]) ||
-                      getFirstValue(raw, ["account_holder_name", "accountHolderName"])
-                  )}
-                />
-                <SummaryDetail
-                  label="Paid At"
-                  value={formatDateTime(
-                    getFirstValue(payment, ["paid_at", "paidAt"]) ||
-                      getFirstValue(snapshot, ["paid_at", "paidAt"]) ||
-                      getFirstValue(raw, ["paid_at", "paidAt"])
-                  )}
-                />
-                <SummaryDetail
-                  label="Remarks"
-                  value={valueOrReceiptFallback(
-                    getFirstValue(payment, ["remarks"]) ||
-                      getFirstValue(snapshot, ["remarks"]) ||
-                      getFirstValue(raw, ["remarks"])
-                  )}
-                />
+                <SummaryDetail label="Payment Mode" value={receipt?.paymentMode || notAvailable} />
+                <SummaryDetail label="Bank Reference" value={receipt?.bankReference || notAvailable} />
+                <SummaryDetail label="Bank Name" value={receipt?.bankName || notAvailable} />
+                <SummaryDetail label="Account Holder Name" value={receipt?.accountHolderName || notAvailable} />
+                <SummaryDetail label="Paid At" value={formatDateTime(receipt?.paidAt)} />
+                <SummaryDetail label="Remarks" value={receipt?.remarks || notAvailable} />
               </ReceiptSection>
             </div>
           )}
@@ -2358,7 +2802,7 @@ function ReceiptDetailsModal({
             className="w-full sm:w-auto"
           >
             <Printer size={17} aria-hidden="true" />
-            {printLoading ? "Preparing..." : "Print / Save PDF"}
+            {printLoading ? "Preparing..." : "Print / Save Payment Receipt PDF"}
           </TraderButton>
         </div>
       </div>
@@ -2407,7 +2851,7 @@ function TabButton({ active, children, onClick }) {
 
 function TableHead({ children, className = "" }) {
   return (
-    <th className={["whitespace-nowrap px-5 py-4 text-xs font-black uppercase tracking-wide text-slate-500", className].join(" ")}>
+    <th className={["whitespace-nowrap px-2 py-3 text-xs font-black uppercase tracking-wide text-slate-500", className].join(" ")}>
       {children}
     </th>
   );
@@ -2415,46 +2859,66 @@ function TableHead({ children, className = "" }) {
 
 function TableCell({ children, className = "" }) {
   return (
-    <td className={["whitespace-nowrap px-5 py-5 text-sm text-slate-700", className].join(" ")}>
+    <td className={["whitespace-nowrap px-2 py-3 text-sm text-slate-700", className].join(" ")}>
       {children}
     </td>
   );
 }
 
-function ProcurementTableRow({ procurement, onView, onRecordPayment }) {
+function ProcurementTableRow({
+  procurement,
+  receipts,
+  receiptsLoading,
+  receiptsError,
+  onView,
+  onRecordPayment,
+  onViewReceipts,
+}) {
   const recordPaymentAllowed = canRecordPayment(procurement);
+  const hasReceipts = receipts.length > 0;
+  const receiptTitle = receiptsLoading
+    ? "Checking payment receipts"
+    : receiptsError
+      ? "Unable to load payment receipts"
+      : hasReceipts
+        ? "View Payment Receipts"
+        : "No payment receipt yet";
 
   return (
     <tr className="hover:bg-slate-50">
-      <TableCell>
-        <p className="truncate font-black text-slate-950">{procurement.procurementNo}</p>
+      <TableCell className="w-[12%]">
+        <p className="max-w-[120px] truncate text-sm font-semibold text-slate-950">{procurement.procurementNo}</p>
         {procurement.harvest !== notAvailable ? (
           <p className="mt-1 truncate text-xs font-semibold text-slate-500">
-            Harvest {procurement.harvest}
+            Harvest Reference: {procurement.harvest}
           </p>
         ) : null}
       </TableCell>
-      <TableCell>{procurement.producer}</TableCell>
-      <TableCell className="font-bold text-slate-900">
+      <TableCell className="w-[18%]">
+        <span className="block max-w-[120px] truncate text-sm">{procurement.producer}</span>
+      </TableCell>
+      <TableCell className="w-[15%] text-right text-sm font-bold text-slate-900">
         {formatCurrency(procurement.totalValue)}
       </TableCell>
-      <TableCell>{formatCurrency(procurement.totalPaid)}</TableCell>
-      <TableCell className="font-bold text-slate-900">
+      <TableCell className="w-[12%] text-right text-sm">
+        {formatCurrency(procurement.totalPaid)}
+      </TableCell>
+      <TableCell className="w-[15%] text-right text-sm font-bold text-slate-900">
         {formatCurrency(procurement.outstandingBalance)}
       </TableCell>
-      <TableCell>
+      <TableCell className="w-[12%] text-center">
         <PaymentStatusBadge status={procurement.status} />
       </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
+      <TableCell className="w-[16%]">
+        <div className="flex flex-nowrap items-center justify-center gap-1">
           <button
             type="button"
             title="View Procurement"
             aria-label="View procurement details"
             onClick={() => onView(procurement)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
           >
-            <Eye size={17} aria-hidden="true" />
+            <Eye size={14} aria-hidden="true" />
           </button>
           {recordPaymentAllowed ? (
             <button
@@ -2462,19 +2926,45 @@ function ProcurementTableRow({ procurement, onView, onRecordPayment }) {
               title="Record Payment"
               aria-label="Record payment"
               onClick={() => onRecordPayment(procurement)}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
             >
-              <CreditCard size={17} aria-hidden="true" />
+              <CreditCard size={14} aria-hidden="true" />
             </button>
           ) : null}
+          <button
+            type="button"
+            title={receiptTitle}
+            aria-label={receiptTitle}
+            onClick={() => onViewReceipts(procurement)}
+            disabled={!hasReceipts || receiptsLoading || Boolean(receiptsError)}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/10"
+          >
+            <Receipt size={14} aria-hidden="true" />
+          </button>
         </div>
       </TableCell>
     </tr>
   );
 }
 
-function ProcurementMobileCard({ procurement, onView, onRecordPayment }) {
+function ProcurementMobileCard({
+  procurement,
+  receipts,
+  receiptsLoading,
+  receiptsError,
+  onView,
+  onRecordPayment,
+  onViewReceipts,
+}) {
   const recordPaymentAllowed = canRecordPayment(procurement);
+  const hasReceipts = receipts.length > 0;
+  const receiptTitle = receiptsLoading
+    ? "Checking payment receipts"
+    : receiptsError
+      ? "Unable to load payment receipts"
+      : hasReceipts
+        ? "View Payment Receipts"
+        : "No payment receipt yet";
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/60">
@@ -2485,7 +2975,7 @@ function ProcurementMobileCard({ procurement, onView, onRecordPayment }) {
           </p>
           {procurement.harvest !== notAvailable ? (
             <p className="mt-1 truncate text-xs font-semibold text-slate-500">
-              Harvest: {procurement.harvest}
+              Harvest Reference: {procurement.harvest}
             </p>
           ) : null}
           {procurement.producer !== notAvailable ? (
@@ -2508,34 +2998,39 @@ function ProcurementMobileCard({ procurement, onView, onRecordPayment }) {
 
       <div
         className={[
-          "mt-4 grid gap-2",
-          recordPaymentAllowed ? "grid-cols-2" : "grid-cols-1",
+          "mt-4 flex flex-nowrap items-center gap-2",
         ].join(" ")}
       >
-        <TraderButton
+        <button
           type="button"
-          variant="secondary"
           onClick={() => onView(procurement)}
-          className="px-3"
           title="View Procurement"
           aria-label="View procurement details"
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
         >
           <Eye size={16} aria-hidden="true" />
-          View
-        </TraderButton>
+        </button>
         {recordPaymentAllowed ? (
-          <TraderButton
+          <button
             type="button"
-            variant="outline"
             onClick={() => onRecordPayment(procurement)}
-            className="px-3"
             title="Record Payment"
             aria-label="Record payment"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
           >
             <CreditCard size={16} aria-hidden="true" />
-            Record Payment
-          </TraderButton>
+          </button>
         ) : null}
+        <button
+          type="button"
+          title={receiptTitle}
+          aria-label={receiptTitle}
+          onClick={() => onViewReceipts(procurement)}
+          disabled={!hasReceipts || receiptsLoading || Boolean(receiptsError)}
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+        >
+          <Receipt size={16} aria-hidden="true" />
+        </button>
       </div>
     </div>
   );
@@ -2563,8 +3058,8 @@ function ReceiptTableRow({ receipt, printLoading, onView, onPrint }) {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            title="View Receipt"
-            aria-label="View payment receipt"
+            title="View Payment Receipt"
+            aria-label="View Payment Receipt"
             onClick={() => onView(receipt.id)}
             disabled={!hasReceiptId}
             className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
@@ -2573,8 +3068,8 @@ function ReceiptTableRow({ receipt, printLoading, onView, onPrint }) {
           </button>
           <button
             type="button"
-            title="Print Receipt"
-            aria-label="Print payment receipt"
+            title="Print Payment Receipt"
+            aria-label="Print Payment Receipt"
             onClick={() => onPrint(receipt.id)}
             disabled={!hasReceiptId || printLoading}
             className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
@@ -2619,8 +3114,8 @@ function ReceiptMobileCard({ receipt, printLoading, onView, onPrint }) {
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          title="View Receipt"
-          aria-label="View payment receipt"
+          title="View Payment Receipt"
+          aria-label="View Payment Receipt"
           onClick={() => onView(receipt.id)}
           disabled={!hasReceiptId}
           className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
@@ -2629,8 +3124,8 @@ function ReceiptMobileCard({ receipt, printLoading, onView, onPrint }) {
         </button>
         <button
           type="button"
-          title="Print Receipt"
-          aria-label="Print payment receipt"
+          title="Print Payment Receipt"
+          aria-label="Print Payment Receipt"
           onClick={() => onPrint(receipt.id)}
           disabled={!hasReceiptId || printLoading}
           className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
@@ -2777,6 +3272,111 @@ function DetailSection({ title, children }) {
   );
 }
 
+function ProcurementReceiptsModal({
+  open,
+  procurement,
+  receipts,
+  printLoading,
+  printError,
+  onClose,
+  onView,
+  onPrint,
+}) {
+  return (
+    <Modal
+      open={open}
+      title="Payment Receipts"
+      onClose={onClose}
+      className="max-w-4xl"
+    >
+      <div className="space-y-5">
+        <DetailSection title="Procurement">
+          <SummaryDetail
+            label="Procurement No"
+            value={procurement?.procurementNo || notAvailable}
+          />
+          <SummaryDetail
+            label="Producer / Farmer"
+            value={procurement?.producer || notAvailable}
+          />
+          <SummaryDetail
+            label="Total Value"
+            value={formatCurrency(procurement?.totalValue)}
+          />
+          <SummaryDetail
+            label="Outstanding Balance"
+            value={formatCurrency(procurement?.outstandingBalance)}
+          />
+        </DetailSection>
+
+        <div className="overflow-hidden rounded-2xl border border-slate-200">
+          <table className="w-full divide-y divide-slate-200 text-left">
+            <thead className="bg-slate-50">
+              <tr>
+                <TableHead>Receipt No</TableHead>
+                <TableHead>Current Payment</TableHead>
+                <TableHead>Payment Mode</TableHead>
+                <TableHead>Paid At</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {receipts.map((receipt) => (
+                <tr key={receipt.id || receipt.receiptNo}>
+                  <TableCell className="font-black text-slate-950">
+                    {receipt.receiptNo}
+                  </TableCell>
+                  <TableCell className="font-bold text-slate-900">
+                    {formatOptionalCurrency(receipt.amount)}
+                  </TableCell>
+                  <TableCell>{receipt.paymentMode}</TableCell>
+                  <TableCell>{formatDateTime(receipt.paidAt)}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-nowrap items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        title="View Payment Receipt"
+                        aria-label="View Payment Receipt"
+                        onClick={() => onView(receipt.id)}
+                        disabled={!receipt.id}
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                      >
+                        <Eye size={17} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Print Payment Receipt"
+                        aria-label="Print Payment Receipt"
+                        onClick={() => onPrint(receipt.id)}
+                        disabled={!receipt.id || printLoading}
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                      >
+                        <Printer size={17} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </TableCell>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {printError ? (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+            {printError}
+          </div>
+        ) : null}
+
+        <ModalActions>
+          <TraderButton type="button" variant="secondary" onClick={onClose}>
+            Close
+          </TraderButton>
+        </ModalActions>
+      </div>
+    </Modal>
+  );
+}
+
 function ReceiptSection({ title, children, gridClassName = "sm:grid-cols-2" }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -2810,6 +3410,13 @@ function SummaryDetail({ label, value, className = "" }) {
 }
 
 function PaymentStatusBadge({ status }) {
+  const label = String(status || "")
+    .replace(/[_-]+/g, " ")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
   const tone = {
     CONFIRMED: "border-blue-200 bg-blue-50 text-blue-700",
     PARTIALLY_PAID: "border-amber-200 bg-amber-50 text-amber-700",
@@ -2817,20 +3424,12 @@ function PaymentStatusBadge({ status }) {
   };
 
   return (
-    <TraderStatusBadge status={status} className={tone[status] || ""}>
-      {status}
+    <TraderStatusBadge
+      status={status}
+      className={["whitespace-nowrap px-2 py-1 text-xs", tone[status] || ""].join(" ")}
+    >
+      {label || status}
     </TraderStatusBadge>
   );
 }
 
-function formatWeight(value) {
-  if (value === notAvailable) return value;
-
-  const text = String(value);
-
-  if (text.toLowerCase().includes("kg")) {
-    return text;
-  }
-
-  return `${text} kg`;
-}

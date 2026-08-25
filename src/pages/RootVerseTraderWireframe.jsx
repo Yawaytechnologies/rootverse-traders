@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Bell,
   Search,
@@ -17,11 +17,9 @@ import {
   Phone,
   Eye,
   QrCode,
-  MapPin,
   ArrowRight,
   Menu,
   X,
-  Building2,
   Ship,
 } from "lucide-react";
 
@@ -42,7 +40,7 @@ const menuItems = [
 
 const summaryCards = [
   { title: "Harvest Requests", value: "18", note: "From farmers / fishers", status: "Pending" },
-  { title: "Active Harvest IDs", value: "09", note: "Accepted procurement", status: "Active" },
+  { title: "Active Harvests", value: "09", note: "Accepted procurement", status: "Active" },
   { title: "Quality Verified", value: "31", note: "Inspection completed", status: "Passed" },
   { title: "Traceable Crates", value: "284", note: "QR linked crates", status: "Packed" },
   { title: "Transport Loading", value: "07", note: "Crates scanned", status: "In Transit" },
@@ -53,7 +51,7 @@ const workflowSteps = [
   "Farmer / Fisher",
   "Harvest Request",
   "Trader Accepts",
-  "Harvest ID",
+  "Harvest Reference",
   "Quality Inspection",
   "Crate Packing",
   "Transport Loading",
@@ -277,7 +275,7 @@ function SourceSection() {
     <div className="space-y-6">
       <PageHeader title="Source Procurement" subtitle="Procurement begins when farmers or fishers submit harvest requests through the RootVerse mobile app." />
       <SectionCard title="Harvest Requests" subtitle="Trader reviews harvest details before accepting procurement request.">
-        <SimpleTable headers={["Harvest ID", "Source Name", "Type", "District", "Biomass", "Size", "Status", "Action"]} rows={sourceRows} renderRow={(row) => (
+        <SimpleTable headers={["Harvest Reference", "Source Name", "Type", "District", "Biomass", "Size", "Status", "Action"]} rows={sourceRows} renderRow={(row) => (
           <tr key={row.harvestId}>
             <TableCell className="font-bold text-slate-900">{row.harvestId}</TableCell><TableCell>{row.sourceName}</TableCell><TableCell>{row.type}</TableCell><TableCell>{row.district}</TableCell><TableCell>{row.biomass}</TableCell><TableCell>{row.size}</TableCell><TableCell><StatusBadge status={row.status} /></TableCell><TableCell><div className="flex gap-2"><button className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"><Phone className="h-4 w-4" /></button><button className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"><Eye className="h-4 w-4" /></button><PrimaryButton>Accept</PrimaryButton></div></TableCell>
           </tr>
@@ -291,9 +289,9 @@ function QualitySection() {
   return (
     <div className="space-y-6">
       <PageHeader title="Quality Operations" subtitle="Quality inspectors verify shrimp or fish and update inspection details, images, and quality parameters." />
-      <SectionCard title="Quality Inspection Records" subtitle="Inspection details are connected to Harvest ID.">
+      <SectionCard title="Quality Inspection Records" subtitle="Inspection details are connected to Harvest Reference.">
         <div className="grid gap-5 lg:grid-cols-[1.3fr_0.7fr]">
-          <SimpleTable headers={["Harvest ID", "Inspector", "Product", "Parameters", "Images", "Status"]} rows={qualityRows} renderRow={(row) => (
+          <SimpleTable headers={["Harvest Reference", "Inspector", "Product", "Parameters", "Images", "Status"]} rows={qualityRows} renderRow={(row) => (
             <tr key={row.harvestId}><TableCell className="font-bold text-slate-900">{row.harvestId}</TableCell><TableCell>{row.inspector}</TableCell><TableCell>{row.product}</TableCell><TableCell>{row.parameters}</TableCell><TableCell>{row.images}</TableCell><TableCell><StatusBadge status={row.status} /></TableCell></tr>
           )} />
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
@@ -310,11 +308,11 @@ function QualitySection() {
 function CrateSection() {
   return (
     <div className="space-y-6">
-      <PageHeader title="Crate Traceability" subtitle="Crate packers pack seafood into traceable crates linked to Harvest ID and quality inspection records.">
+      <PageHeader title="Crate Traceability" subtitle="Crate packers pack seafood into traceable crates linked to Harvest Reference and quality inspection records.">
         <SecondaryButton><QrCode className="h-4 w-4" /> Generate QR</SecondaryButton><PrimaryButton><Plus className="h-4 w-4" /> Add Crate</PrimaryButton>
       </PageHeader>
       <SectionCard title="Crate-Level Traceability" subtitle="Trader can view crate quantity, weight, grade, procurement summary, and traceability.">
-        <SimpleTable headers={["Crate QR", "Harvest ID", "Weight", "Grade", "Packed By", "Status", "Action"]} rows={crateRows} renderRow={(row) => (
+        <SimpleTable headers={["Crate QR", "Harvest Reference", "Weight", "Grade", "Packed By", "Status", "Action"]} rows={crateRows} renderRow={(row) => (
           <tr key={row.qr}><TableCell className="font-bold text-slate-900">{row.qr}</TableCell><TableCell>{row.harvestId}</TableCell><TableCell>{row.weight}</TableCell><TableCell>{row.grade}</TableCell><TableCell>{row.packedBy}</TableCell><TableCell><StatusBadge status={row.status} /></TableCell><TableCell><button className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50"><Eye className="h-4 w-4" /></button></TableCell></tr>
         )} />
       </SectionCard>
@@ -327,7 +325,7 @@ function TransportSection() {
     <div className="space-y-6">
       <PageHeader title="Transport Operations" subtitle="During loading, crate QR codes are scanned and custody transfers from trader operation to transport operation." />
       <SectionCard title="Transport Loading Records" subtitle="Transport vehicle and operator manage crate movement to processor.">
-        <SimpleTable headers={["Loading ID", "Harvest ID", "Vehicle", "Operator", "Scanned Crates", "Custody", "Status"]} rows={transportRows} renderRow={(row) => (
+        <SimpleTable headers={["Loading ID", "Harvest Reference", "Vehicle", "Operator", "Scanned Crates", "Custody", "Status"]} rows={transportRows} renderRow={(row) => (
           <tr key={row.loadingId}><TableCell className="font-bold text-slate-900">{row.loadingId}</TableCell><TableCell>{row.harvestId}</TableCell><TableCell>{row.vehicle}</TableCell><TableCell>{row.operator}</TableCell><TableCell>{row.scanned}</TableCell><TableCell>{row.custody}</TableCell><TableCell><StatusBadge status={row.status} /></TableCell></tr>
         )} />
       </SectionCard>
@@ -351,7 +349,7 @@ function ReceivingSection() {
     <div className="space-y-6">
       <PageHeader title="Receiving Verification" subtitle="Processor scans crate QR codes and confirms receipt. Custody transfers from transport operation to processor." />
       <SectionCard title="Processor Receiving Records" subtitle="Received crates are added into the processor workflow.">
-        <SimpleTable headers={["Receiving ID", "Trader", "Harvest ID", "Expected", "Received", "Custody", "Status"]} rows={receivingRows} renderRow={(row) => (
+        <SimpleTable headers={["Receiving ID", "Trader", "Harvest Reference", "Expected", "Received", "Custody", "Status"]} rows={receivingRows} renderRow={(row) => (
           <tr key={row.receivingId}><TableCell className="font-bold text-slate-900">{row.receivingId}</TableCell><TableCell>{row.trader}</TableCell><TableCell>{row.harvestId}</TableCell><TableCell>{row.expected}</TableCell><TableCell>{row.received}</TableCell><TableCell>{row.custody}</TableCell><TableCell><StatusBadge status={row.status} /></TableCell></tr>
         )} />
       </SectionCard>
@@ -364,7 +362,7 @@ function InventorySection() {
     <div className="space-y-6">
       <PageHeader title="Raw Material Inventory" subtitle="Processor manages received seafood inventory from multiple traders." />
       <SectionCard title="Inventory Allocation" subtitle="Inventory maintains trader, harvest, crate, and source traceability.">
-        <SimpleTable headers={["Inventory ID", "Harvest ID", "Trader", "Product", "Quantity", "Status"]} rows={inventoryRows} renderRow={(row) => (
+        <SimpleTable headers={["Inventory ID", "Harvest Reference", "Trader", "Product", "Quantity", "Status"]} rows={inventoryRows} renderRow={(row) => (
           <tr key={row.inventoryId}><TableCell className="font-bold text-slate-900">{row.inventoryId}</TableCell><TableCell>{row.harvestId}</TableCell><TableCell>{row.trader}</TableCell><TableCell>{row.product}</TableCell><TableCell>{row.quantity}</TableCell><TableCell><StatusBadge status={row.status} /></TableCell></tr>
         )} />
       </SectionCard>
@@ -393,15 +391,38 @@ function ReportsSection() {
       <PageHeader title="Reports & Traceability" subtitle="Search traceability records from harvest source to processing batch creation.">
         <SecondaryButton>Export Report</SecondaryButton>
       </PageHeader>
-      <SectionCard title="Traceability Search" subtitle="Search by Harvest ID, Crate QR, Receiving ID, Inventory ID, or Batch ID.">
+      <SectionCard title="Traceability Search" subtitle="Search by Harvest Reference, Crate QR, Receiving ID, Inventory ID, or Batch ID.">
         <div className="grid gap-5 lg:grid-cols-[1fr_0.8fr]">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
             <label className="text-sm font-bold text-slate-900">Search Traceability</label>
-            <div className="mt-3 flex flex-col gap-3 sm:flex-row"><div className="flex flex-1 items-center rounded-2xl border border-slate-200 bg-white px-4 py-3"><Search className="mr-3 h-5 w-5 text-slate-400" /><input className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" placeholder="Enter Harvest ID / Crate QR / Batch ID" /></div><PrimaryButton>Search</PrimaryButton></div>
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row"><div className="flex flex-1 items-center rounded-2xl border border-slate-200 bg-white px-4 py-3"><Search className="mr-3 h-5 w-5 text-slate-400" /><input className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" placeholder="Enter Harvest Reference / Crate QR / Batch ID" /></div><PrimaryButton>Search</PrimaryButton></div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">{["Procurement Report", "Quality Report", "Crate Report", "Transport Report", "Receiving Report", "Batch Traceability Report"].map((report) => <button key={report} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left text-sm font-bold text-slate-700 hover:bg-slate-50"><FileText className="h-5 w-5 text-emerald-600" />{report}</button>)}</div>
         </div>
       </SectionCard>
+    </div>
+  );
+}
+
+function SidebarContent({ activeTab, onSelect }) {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-5">
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-600 text-lg font-black text-white">R</div>
+        <div><p className="text-lg font-black leading-none text-slate-900">RootVerse</p><p className="mt-1 text-xs font-medium text-slate-500">Trade Infrastructure</p></div>
+      </div>
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+        {menuItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.key;
+          return (
+            <button key={item.key} onClick={() => onSelect(item.key)} className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${isActive ? "bg-emerald-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"}`}>
+              <Icon className="h-5 w-5" /><span>{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+      <div className="border-t border-slate-200 p-4"><div className="rounded-2xl bg-slate-50 p-4"><p className="text-sm font-bold text-slate-900">Trader / Processor</p><p className="mt-1 text-xs text-slate-500">Role based workspace</p></div></div>
     </div>
   );
 }
@@ -429,42 +450,26 @@ export default function RootVerseTraderWireframe() {
     }
   };
 
-  const SidebarContent = () => (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-5">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-600 text-lg font-black text-white">R</div>
-        <div><p className="text-lg font-black leading-none text-slate-900">RootVerse</p><p className="mt-1 text-xs font-medium text-slate-500">Trade Infrastructure</p></div>
-      </div>
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-        {menuItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.key;
-          return (
-            <button key={item.key} onClick={() => { setActiveTab(item.key); setMobileSidebarOpen(false); }} className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${isActive ? "bg-emerald-600 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"}`}>
-              <Icon className="h-5 w-5" /><span>{item.label}</span>
-            </button>
-          );
-        })}
-      </nav>
-      <div className="border-t border-slate-200 p-4"><div className="rounded-2xl bg-slate-50 p-4"><p className="text-sm font-bold text-slate-900">Trader / Processor</p><p className="mt-1 text-xs text-slate-500">Role based workspace</p></div></div>
-    </div>
-  );
+  function handleSidebarSelect(key) {
+    setActiveTab(key);
+    setMobileSidebarOpen(false);
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       {mobileSidebarOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-slate-900/40" onClick={() => setMobileSidebarOpen(false)} />
-          <aside className="absolute left-0 top-0 h-full w-80 bg-white shadow-xl"><div className="absolute right-4 top-4 z-10"><button onClick={() => setMobileSidebarOpen(false)} className="rounded-xl border border-slate-200 bg-white p-2"><X className="h-5 w-5" /></button></div><SidebarContent /></aside>
+          <aside className="absolute left-0 top-0 h-full w-80 bg-white shadow-xl"><div className="absolute right-4 top-4 z-10"><button onClick={() => setMobileSidebarOpen(false)} className="rounded-xl border border-slate-200 bg-white p-2"><X className="h-5 w-5" /></button></div><SidebarContent activeTab={activeTab} onSelect={handleSidebarSelect} /></aside>
         </div>
       )}
       <div className="flex">
-        <aside className="fixed left-0 top-0 hidden h-screen w-72 border-r border-slate-200 bg-white lg:block"><SidebarContent /></aside>
+        <aside className="fixed left-0 top-0 hidden h-screen w-72 border-r border-slate-200 bg-white lg:block"><SidebarContent activeTab={activeTab} onSelect={handleSidebarSelect} /></aside>
         <div className="min-h-screen flex-1 lg:pl-72">
           <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
             <div className="flex items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
               <div className="flex items-center gap-3"><button onClick={() => setMobileSidebarOpen(true)} className="rounded-2xl border border-slate-200 bg-white p-2.5 text-slate-600 lg:hidden"><Menu className="h-5 w-5" /></button><div><p className="text-xs font-semibold text-slate-500">Current Section</p><h2 className="text-lg font-black text-slate-900">{currentMenu?.label || "Dashboard"}</h2></div></div>
-              <div className="hidden min-w-[340px] max-w-xl flex-1 items-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 md:flex"><Search className="mr-3 h-5 w-5 text-slate-400" /><input className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" placeholder="Search Harvest ID, Crate QR, Receiving ID, Batch ID" /></div>
+              <div className="hidden min-w-[340px] max-w-xl flex-1 items-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2.5 md:flex"><Search className="mr-3 h-5 w-5 text-slate-400" /><input className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" placeholder="Search Harvest Reference, Crate QR, Receiving ID, Batch ID" /></div>
               <div className="flex items-center gap-3"><button className="relative rounded-2xl border border-slate-200 bg-white p-2.5 text-slate-600 hover:bg-slate-50"><Bell className="h-5 w-5" /><span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-emerald-500" /></button><div className="hidden items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2 md:flex"><UserCircle className="h-6 w-6 text-slate-500" /><div><p className="text-sm font-bold text-slate-800">RootVerse User</p><p className="text-xs text-slate-500">Organization Workspace</p></div></div></div>
             </div>
           </header>

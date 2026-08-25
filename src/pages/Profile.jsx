@@ -57,7 +57,7 @@ const Profile = () => {
               {profile.trader_name || "Trader Profile"}
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              Complete logged-in trader details from API
+              Complete trader account and business details.
             </p>
           </div>
 

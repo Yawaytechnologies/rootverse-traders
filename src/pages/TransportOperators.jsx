@@ -131,6 +131,34 @@ function hasReadableValue(value) {
   return true;
 }
 
+function getFirstValue(item = {}, keys = []) {
+  for (const key of keys) {
+    const value = item?.[key];
+
+    if (value !== undefined && value !== null && value !== "") {
+      return value;
+    }
+  }
+
+  return "";
+}
+
+function getLoadedCratesValue(source = {}, records = []) {
+  return (
+    getFirstValue(source, [
+      "loaded_crates",
+      "loadedCrates",
+      "crates_loaded",
+      "cratesLoaded",
+      "total_loaded",
+      "totalLoaded",
+    ]) ||
+    getFirstValue(source?.progress || {}, ["loaded"]) ||
+    (Array.isArray(source?.crates) ? source.crates.length : "") ||
+    records.length
+  );
+}
+
 function formatStatusLabel(status) {
   const value = String(status || "").trim();
 
@@ -254,7 +282,7 @@ function getLatestDate(records) {
   return new Date(Math.max(...timestamps)).toISOString();
 }
 
-function groupActivityByHarvest(records, paginated) {
+function groupActivityByHarvest(records) {
   const map = new Map();
 
   records.forEach((record) => {
@@ -272,6 +300,23 @@ function groupActivityByHarvest(records, paginated) {
   });
 
   return Array.from(map.values()).map((item) => {
+    const sourceWithLoaded =
+      item.records.find((record) =>
+        hasReadableValue(
+          getFirstValue(record, [
+            "loaded_crates",
+            "loadedCrates",
+            "crates_loaded",
+            "cratesLoaded",
+            "total_loaded",
+            "totalLoaded",
+          ])
+        )
+      ) ||
+      item.records.find((record) =>
+        hasReadableValue(getFirstValue(record?.progress || {}, ["loaded"]))
+      ) ||
+      {};
     const vehicle =
       item.records.find((record) => record?.vehicle_number)?.vehicle_number ||
       item.records.find((record) => record?.vehicle_no)?.vehicle_no ||
@@ -287,7 +332,7 @@ function groupActivityByHarvest(records, paginated) {
       harvest_id: item.harvest_id,
       harvest_reference: getActivityHarvestReference(item.records),
       vehicle_number: vehicle,
-      loaded_records: paginated ? null : item.records.length,
+      loaded_records: getLoadedCratesValue(sourceWithLoaded, item.records),
       status,
       date: getLatestDate(item.records),
       records: item.records,
@@ -488,7 +533,6 @@ export default function TransportOperators() {
       const response = await traderService.getTransportHarvestProgress(
         harvestId
       );
-
       setHarvestProgress(unwrapPayload(response));
     } catch (err) {
       console.error(err);
@@ -804,7 +848,7 @@ function TransportOperatorList({
   onView,
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
+    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
       <div className="space-y-4 border-b border-gray-200 p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -859,7 +903,16 @@ function TransportOperatorList({
       </div>
 
       <div className="hidden md:block">
-        <table className="w-full text-left text-sm">
+        <table className="w-full table-fixed text-left">
+          <colgroup>
+            <col className="w-[14%]" />
+            <col className="w-[18%]" />
+            <col className="w-[14%]" />
+            <col className="w-[14%]" />
+            <col className="w-[18%]" />
+            <col className="w-[12%]" />
+            <col className="w-[10%]" />
+          </colgroup>
           <thead className="bg-gray-50 text-gray-600">
             <tr>
               <TableHead>Operator Code</TableHead>
@@ -1015,7 +1068,7 @@ function OperatorDetailsModal({
           </div>
         </section>
 
-        <section className="overflow-hidden rounded-2xl border border-slate-200">
+        <section className="rounded-2xl border border-slate-200">
           <div className="flex flex-col gap-3 border-b border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-sm font-black uppercase tracking-wide text-slate-700">
@@ -1083,7 +1136,15 @@ function TransportHistoryTable({
   return (
     <>
       <div className="hidden md:block">
-        <table className="w-full text-left text-sm">
+        <table className="w-full table-fixed text-left">
+          <colgroup>
+            <col className="w-[25%]" />
+            <col className="w-[20%]" />
+            <col className="w-[15%]" />
+            <col className="w-[18%]" />
+            <col className="w-[12%]" />
+            <col className="w-[10%]" />
+          </colgroup>
           <thead className="bg-gray-50 text-gray-600">
             <tr>
               <TableHead>Harvest Reference</TableHead>
@@ -1144,7 +1205,6 @@ function TransportHistoryRow({
   row,
   harvestLookup,
   harvestLookupStatus,
-  paginated,
   onView,
 }) {
   return (
@@ -1157,7 +1217,7 @@ function TransportHistoryRow({
       </TableCell>
       <TableCell>{valueOrNotAvailable(row.vehicle_number)}</TableCell>
       <TableCell>
-        {paginated ? "Not available" : valueOrNotAvailable(row.loaded_records)}
+        {valueOrNotAvailable(row.loaded_records)}
       </TableCell>
       <TableCell>
         <TraderStatusBadge status={formatDispatchStatus(row.status)} />
@@ -1178,7 +1238,6 @@ function TransportHistoryMobileCard({
   row,
   harvestLookup,
   harvestLookupStatus,
-  paginated,
   onView,
 }) {
   return (
@@ -1200,7 +1259,7 @@ function TransportHistoryMobileCard({
       <div className="mt-4 grid gap-3">
         <SummaryDetail
           label="Loaded Crates"
-          value={paginated ? "Not available" : row.loaded_records}
+          value={valueOrNotAvailable(row.loaded_records)}
         />
         <SummaryDetail label="Date" value={formatDateTime(row.date)} />
       </div>
@@ -1231,6 +1290,7 @@ function HarvestTransportDetailModal({
   onRetry,
 }) {
   const crates = Array.isArray(progress?.crates) ? progress.crates : [];
+  const loadedCrates = getLoadedCratesValue(progress || {}, crates);
   const progressValue = normalizeProgress(progress?.loading_progress);
   const harvestReference = getHarvestReference(
     { ...(harvest || {}), ...(progress || {}) },
@@ -1287,7 +1347,7 @@ function HarvestTransportDetailModal({
                 }
               />
               <SummaryDetail label="Total Packed Crates" value={progress?.total_packed_crates} />
-              <SummaryDetail label="Loaded Crates" value={progress?.loaded_crates} />
+              <SummaryDetail label="Loaded Crates" value={valueOrNotAvailable(loadedCrates)} />
               <SummaryDetail label="Remaining Crates" value={progress?.remaining_crates} />
               <SummaryDetail
                 label="Dispatch Status"
@@ -1323,7 +1383,7 @@ function HarvestTransportDetailModal({
               </section>
             ) : null}
 
-            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <section className="rounded-2xl border border-slate-200 bg-white">
               <div className="border-b border-slate-200 p-4">
                 <h3 className="text-sm font-black uppercase tracking-wide text-slate-700">
                   Crate Loading Details
@@ -1347,7 +1407,17 @@ function CrateLoadingTable({ crates }) {
   return (
     <>
       <div className="hidden md:block">
-        <table className="w-full text-left text-sm">
+        <table className="w-full table-fixed text-left">
+          <colgroup>
+            <col className="w-[15%]" />
+            <col className="w-[13%]" />
+            <col className="w-[10%]" />
+            <col className="w-[10%]" />
+            <col className="w-[16%]" />
+            <col className="w-[8%]" />
+            <col className="w-[13%]" />
+            <col className="w-[15%]" />
+          </colgroup>
           <thead className="bg-gray-50 text-gray-600">
             <tr>
               <TableHead>Crate Code</TableHead>
@@ -1480,7 +1550,7 @@ function TableHead({ children, className = "" }) {
   return (
     <th
       className={[
-        "whitespace-nowrap px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-500",
+        "whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500",
         className,
       ].join(" ")}
     >
@@ -1491,7 +1561,7 @@ function TableHead({ children, className = "" }) {
 
 function TableCell({ children, className = "" }) {
   return (
-    <td className={["px-4 py-4 align-middle text-sm text-slate-700", className].join(" ")}>
+    <td className={["truncate whitespace-nowrap overflow-hidden px-3 py-3 align-middle text-sm text-slate-700", className].join(" ")}>
       {children}
     </td>
   );
@@ -1538,7 +1608,7 @@ function IconButton({ title, onClick, disabled = false }) {
       aria-label={title}
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
+      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
     >
       <Eye size={17} aria-hidden="true" />
     </button>
@@ -1600,7 +1670,7 @@ function CreateModalShell({
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
             aria-label="Close"
             title="Close"
           >
@@ -1644,7 +1714,7 @@ function ModalShell({ title, onClose, children }) {
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
             aria-label="Close"
             title="Close"
           >

@@ -20,6 +20,18 @@ function getPayload(response) {
   return response?.data?.data || response?.data || response || {};
 }
 
+function extractResponseArray(response) {
+  const payload = getPayload(response);
+
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.crates)) return payload.crates;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  if (Array.isArray(payload?.items)) return payload.items;
+
+  return [];
+}
+
 function getPaginationMeta(response) {
   const payload = getPayload(response);
   const meta = payload?.pagination || payload?.meta?.pagination || payload?.meta || {};
@@ -99,6 +111,10 @@ function formatDateTime(value) {
 }
 
 function formatWeight(value) {
+  if (typeof value === "string" && value.trim().toLowerCase().includes("kg")) {
+    return value;
+  }
+
   const number = Number(value);
   if (!Number.isFinite(number)) return "Not available";
   return `${number.toFixed(2)} kg`;
@@ -117,6 +133,18 @@ function getCrateCode(crate) {
     "qrCode",
     "crate_qr_id",
   ]);
+}
+
+function findRelatedCrate(crate, records = []) {
+  const crateCode = getCrateCode(crate);
+  const crateId = getCrateInternalId(crate);
+
+  return (
+    records.find((record) => record?.crate_code && record.crate_code === crateCode) ||
+    records.find((record) => record?.crate_qr_code && record.crate_qr_code === crateCode) ||
+    records.find((record) => String(record?.crate_packing_id || "") === String(crateId)) ||
+    null
+  );
 }
 
 function getCrateQr(crate) {
@@ -177,7 +205,14 @@ function getSpecies(crate) {
 }
 
 function getGrade(crate) {
-  return firstValue(crate, ["grade", "quality_grade", "product_grade"]);
+  return firstValue(crate, [
+    "quality_grade",
+    "grade",
+    "inspection_grade",
+    "product_grade",
+    "inspection.quality_grade",
+    "inspection.grade",
+  ]);
 }
 
 function getWeight(crate) {
@@ -186,6 +221,12 @@ function getWeight(crate) {
 
 function getQualityStatus(crate) {
   return firstValue(crate, [
+    "quality_grade",
+    "grade",
+    "inspection_grade",
+    "quality",
+    "inspection.quality_grade",
+    "inspection.grade",
     "inspection_status",
     "quality_status",
     "qualityStatus",
@@ -199,19 +240,26 @@ function getPackingStatus(crate) {
   return firstValue(crate, ["packing_status", "packingStatus", "status"]);
 }
 
-function getTransportStatus(crate) {
-  return firstValue(crate, [
-    "chain_of_custody_status",
-    "transport_status",
-    "dispatch_status",
-    "loading_status",
-    "transport.dispatch_status",
-    "transport.status",
-  ]);
+function getTransportStatus(crate, transportProgressLookup = new Map()) {
+  const progress = transportProgressLookup.get(String(crate?.harvest_id)) || {};
+  const transportCrate = findRelatedCrate(
+    crate,
+    Array.isArray(progress?.crates) ? progress.crates : []
+  );
+
+  return (
+    transportCrate?.chain_of_custody_status ||
+    progress?.dispatch_status ||
+    ""
+  );
 }
 
-function getPrimaryStatus(crate) {
-  return getTransportStatus(crate) || getPackingStatus(crate) || getQualityStatus(crate);
+function getPrimaryStatus(crate, transportProgressLookup = new Map()) {
+  return (
+    getTransportStatus(crate, transportProgressLookup) ||
+    getPackingStatus(crate) ||
+    getQualityStatus(crate)
+  );
 }
 
 function getVehicle(crate) {
@@ -226,8 +274,10 @@ function getVehicle(crate) {
 function getOperator(crate) {
   return firstValue(crate, [
     "transport_operator_name",
+    "transport_operator.name",
     "transport_operator.full_name",
     "transportOperator.full_name",
+    "operator.name",
     "operator_name",
   ]);
 }
@@ -238,42 +288,6 @@ function getOperatorCode(crate) {
     "transport_operator.operator_rv_id",
     "transportOperator.operator_rv_id",
     "operator_rv_id",
-  ]);
-}
-
-function getPacker(crate) {
-  return firstValue(crate, [
-    "crate_packer_name",
-    "crate_packer.name",
-    "cratePacker.name",
-    "packer_name",
-  ]);
-}
-
-function getPackerCode(crate) {
-  return firstValue(crate, [
-    "crate_packer_code",
-    "crate_packer.code",
-    "cratePacker.code",
-    "packer_code",
-  ]);
-}
-
-function getQualityChecker(crate) {
-  return firstValue(crate, [
-    "quality_checker_name",
-    "quality_checker.checker_name",
-    "qualityChecker.checker_name",
-    "quality_inspection.quality_checker.checker_name",
-  ]);
-}
-
-function getQualityCheckerCode(crate) {
-  return firstValue(crate, [
-    "quality_checker_code",
-    "quality_checker.checker_code",
-    "qualityChecker.checker_code",
-    "quality_inspection.quality_checker.checker_code",
   ]);
 }
 
@@ -320,6 +334,13 @@ export default function Crates() {
   const [selectedCrate, setSelectedCrate] = useState(null);
   const [harvestLookup, setHarvestLookup] = useState(() => new Map());
   const [harvestLookupStatus, setHarvestLookupStatus] = useState("loading");
+  const [qualityInspectionLookup, setQualityInspectionLookup] = useState(
+    () => new Map()
+  );
+  const [packedCrateLookup, setPackedCrateLookup] = useState(() => new Map());
+  const [transportProgressLookup, setTransportProgressLookup] = useState(
+    () => new Map()
+  );
 
   async function loadCrates(nextPage = page, nextStatus = statusFilter) {
     const params = {
@@ -383,6 +404,94 @@ export default function Crates() {
     };
   }, []);
 
+  useEffect(() => {
+    let ignore = false;
+    const visibleCrates = Array.isArray(crates) ? crates : [];
+    const inspectionIds = Array.from(
+      new Set(
+        visibleCrates
+          .map((crate) => crate?.quality_inspection_id)
+          .filter((id) => id !== undefined && id !== null && id !== "")
+          .map(String)
+      )
+    ).filter((id) => !qualityInspectionLookup.has(id));
+    const harvestIds = Array.from(
+      new Set(
+        visibleCrates
+          .map((crate) => crate?.harvest_id)
+          .filter((id) => id !== undefined && id !== null && id !== "")
+          .map(String)
+      )
+    );
+    const packedHarvestIds = harvestIds.filter((id) => !packedCrateLookup.has(id));
+    const transportHarvestIds = harvestIds.filter(
+      (id) => !transportProgressLookup.has(id)
+    );
+
+    if (!inspectionIds.length && !packedHarvestIds.length && !transportHarvestIds.length) {
+      return undefined;
+    }
+
+    Promise.all([
+      Promise.all(
+        inspectionIds.map((id) =>
+          traderService
+            .getQualityInspectionById(id)
+            .then((response) => [id, getPayload(response)])
+            .catch((err) => {
+              console.error(err);
+              return [id, null];
+            })
+        )
+      ),
+      Promise.all(
+        packedHarvestIds.map((id) =>
+          traderService
+            .getHarvestPackedCrates(id)
+            .then((response) => [id, extractResponseArray(response)])
+            .catch((err) => {
+              console.error(err);
+              return [id, []];
+            })
+        )
+      ),
+      Promise.all(
+        transportHarvestIds.map((id) =>
+          traderService
+            .getTransportHarvestProgress(id)
+            .then((response) => [id, getPayload(response)])
+            .catch((err) => {
+              console.error(err);
+              return [id, null];
+            })
+        )
+      ),
+    ]).then(([inspectionEntries, packedEntries, transportEntries]) => {
+      if (ignore) return;
+
+      if (inspectionEntries.length) {
+        setQualityInspectionLookup((prev) => new Map([...prev, ...inspectionEntries]));
+      }
+
+      if (packedEntries.length) {
+        setPackedCrateLookup((prev) => new Map([...prev, ...packedEntries]));
+      }
+
+      if (transportEntries.length) {
+        setTransportProgressLookup((prev) => new Map([...prev, ...transportEntries]));
+      }
+    });
+
+    return () => {
+      ignore = true;
+    };
+  }, [
+    crates,
+    packedCrateLookup,
+    qualityInspectionLookup,
+    transportProgressLookup,
+  ]);
+
   const list = useMemo(() => (Array.isArray(crates) ? crates : []), [crates]);
   const query = searchText.trim().toLowerCase();
 
@@ -397,17 +506,17 @@ export default function Crates() {
   const statusOptions = useMemo(() => {
     const values = new Set();
     list.forEach((crate) => {
-      const status = getPrimaryStatus(crate);
+      const status = getPrimaryStatus(crate, transportProgressLookup);
       if (status) values.add(status);
     });
     if (statusFilter !== "ALL") values.add(statusFilter);
     return Array.from(values);
-  }, [list, statusFilter]);
+  }, [list, statusFilter, transportProgressLookup]);
 
   const stats = useMemo(() => {
     const counts = new Map();
     list.forEach((crate) => {
-      const status = getPrimaryStatus(crate);
+      const status = getPrimaryStatus(crate, transportProgressLookup);
       if (status) counts.set(status, (counts.get(status) || 0) + 1);
     });
 
@@ -421,7 +530,14 @@ export default function Crates() {
       statusCounts: Array.from(counts.entries()).slice(0, 4),
       usingBackendTotal: !query && statusFilter === "ALL" && pagination.total !== null,
     };
-  }, [filteredCrates.length, list, pagination.total, query, statusFilter]);
+  }, [
+    filteredCrates.length,
+    list,
+    pagination.total,
+    query,
+    statusFilter,
+    transportProgressLookup,
+  ]);
 
   function handleStatusFilterChange(value) {
     setStatusFilter(value);
@@ -460,7 +576,7 @@ export default function Crates() {
         ))}
       </div>
 
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
         <div className="space-y-4 border-b border-gray-200 p-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -514,6 +630,7 @@ export default function Crates() {
           crates={filteredCrates}
           harvestLookup={harvestLookup}
           harvestLookupStatus={harvestLookupStatus}
+          transportProgressLookup={transportProgressLookup}
           loading={loading}
           onView={setSelectedCrate}
         />
@@ -549,6 +666,9 @@ export default function Crates() {
           crate={selectedCrate}
           harvestLookup={harvestLookup}
           harvestLookupStatus={harvestLookupStatus}
+          qualityInspectionLookup={qualityInspectionLookup}
+          packedCrateLookup={packedCrateLookup}
+          transportProgressLookup={transportProgressLookup}
           onClose={() => setSelectedCrate(null)}
         />
       ) : null}
@@ -560,17 +680,30 @@ function CrateTable({
   crates,
   harvestLookup,
   harvestLookupStatus,
+  transportProgressLookup,
   loading,
   onView,
 }) {
   return (
     <>
       <div className="hidden lg:block">
-        <table className="w-full text-left text-sm">
+        <table className="w-full table-fixed text-left">
+          <colgroup>
+            <col className="w-[13%]" />
+            <col className="w-[16%]" />
+            <col className="w-[9%]" />
+            <col className="w-[11%]" />
+            <col className="w-[9%]" />
+            <col className="w-[7%]" />
+            <col className="w-[9%]" />
+            <col className="w-[9%]" />
+            <col className="w-[9%]" />
+            <col className="w-[8%]" />
+          </colgroup>
           <thead className="bg-gray-50 text-gray-600">
             <tr>
               <TableHead>Crate</TableHead>
-              <TableHead>Harvest Reference</TableHead>
+              <TableHead>Harvest</TableHead>
               <TableHead>Source</TableHead>
               <TableHead>Product</TableHead>
               <TableHead>Weight</TableHead>
@@ -578,7 +711,7 @@ function CrateTable({
               <TableHead>Quality</TableHead>
               <TableHead>Packing</TableHead>
               <TableHead>Transport</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="text-right">Action</TableHead>
             </tr>
           </thead>
           <tbody>
@@ -597,6 +730,7 @@ function CrateTable({
                     crate={crate}
                     harvestLookup={harvestLookup}
                     harvestLookupStatus={harvestLookupStatus}
+                    transportProgressLookup={transportProgressLookup}
                     onView={onView}
                   />
                 ))
@@ -620,6 +754,7 @@ function CrateTable({
               crate={crate}
               harvestLookup={harvestLookup}
               harvestLookupStatus={harvestLookupStatus}
+              transportProgressLookup={transportProgressLookup}
               onView={onView}
             />
           ))
@@ -629,10 +764,16 @@ function CrateTable({
   );
 }
 
-function CrateRow({ crate, harvestLookup, harvestLookupStatus, onView }) {
+function CrateRow({
+  crate,
+  harvestLookup,
+  harvestLookupStatus,
+  transportProgressLookup,
+  onView,
+}) {
   return (
     <tr className="border-t border-gray-100">
-      <TableCell>
+      <TableCell className="truncate">
         <div className="font-bold text-slate-900">
           {valueOrNotAvailable(getCrateCode(crate))}
         </div>
@@ -642,13 +783,13 @@ function CrateRow({ crate, harvestLookup, harvestLookupStatus, onView }) {
           </div>
         ) : null}
       </TableCell>
-      <TableCell>
+      <TableCell className="truncate">
         {valueOrNotAvailable(getHarvestLabel(crate, harvestLookup, harvestLookupStatus))}
       </TableCell>
-      <TableCell>{valueOrNotAvailable(getSourceLabel(crate))}</TableCell>
-      <TableCell>{valueOrNotAvailable(getSpecies(crate))}</TableCell>
-      <TableCell>{formatWeight(getWeight(crate))}</TableCell>
-      <TableCell>{valueOrNotAvailable(getGrade(crate))}</TableCell>
+      <TableCell className="truncate">{valueOrNotAvailable(getSourceLabel(crate))}</TableCell>
+      <TableCell className="truncate">{valueOrNotAvailable(getSpecies(crate))}</TableCell>
+      <TableCell className="truncate">{formatWeight(getWeight(crate))}</TableCell>
+      <TableCell className="truncate">{valueOrNotAvailable(getGrade(crate))}</TableCell>
       <TableCell>
         <OptionalStatusBadge status={getQualityStatus(crate)} />
       </TableCell>
@@ -656,7 +797,7 @@ function CrateRow({ crate, harvestLookup, harvestLookupStatus, onView }) {
         <OptionalStatusBadge status={getPackingStatus(crate)} />
       </TableCell>
       <TableCell>
-        <OptionalStatusBadge status={getTransportStatus(crate)} />
+        <OptionalStatusBadge status={getTransportStatus(crate, transportProgressLookup)} />
       </TableCell>
       <TableCell className="text-right">
         <IconButton title="View Crate Details" onClick={() => onView(crate)} />
@@ -665,7 +806,15 @@ function CrateRow({ crate, harvestLookup, harvestLookupStatus, onView }) {
   );
 }
 
-function CrateMobileCard({ crate, harvestLookup, harvestLookupStatus, onView }) {
+function CrateMobileCard({
+  crate,
+  harvestLookup,
+  harvestLookupStatus,
+  transportProgressLookup,
+  onView,
+}) {
+  const transportStatus = getTransportStatus(crate, transportProgressLookup);
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -677,13 +826,13 @@ function CrateMobileCard({ crate, harvestLookup, harvestLookupStatus, onView }) 
             {valueOrNotAvailable(getHarvestLabel(crate, harvestLookup, harvestLookupStatus))}
           </p>
         </div>
-        <OptionalStatusBadge status={getPackingStatus(crate) || getTransportStatus(crate)} />
+        <OptionalStatusBadge status={getPackingStatus(crate) || transportStatus} />
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <SummaryDetail label="Product" value={getSpecies(crate)} />
         <SummaryDetail label="Weight" value={formatWeight(getWeight(crate))} />
         <SummaryDetail label="Packing Status" value={formatStatusLabel(getPackingStatus(crate))} />
-        <SummaryDetail label="Transport Status" value={formatStatusLabel(getTransportStatus(crate))} />
+        <SummaryDetail label="Transport Status" value={formatStatusLabel(transportStatus)} />
       </div>
       <div className="mt-4">
         <TraderButton
@@ -704,8 +853,24 @@ function CrateDetailsModal({
   crate,
   harvestLookup,
   harvestLookupStatus,
+  qualityInspectionLookup,
+  packedCrateLookup,
+  transportProgressLookup,
   onClose,
 }) {
+  const qualityInspection =
+    qualityInspectionLookup.get(String(crate?.quality_inspection_id)) || {};
+  const packedCrates = packedCrateLookup.get(String(crate?.harvest_id)) || [];
+  const packedCrate = findRelatedCrate(crate, packedCrates) || {};
+  const transportProgress =
+    transportProgressLookup.get(String(crate?.harvest_id)) || {};
+  const transportCrate =
+    findRelatedCrate(
+      crate,
+      Array.isArray(transportProgress?.crates) ? transportProgress.crates : []
+    ) || {};
+  const transportOperator = transportProgress?.transport_operator || {};
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-3 sm:p-4">
       <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-950/20">
@@ -721,7 +886,7 @@ function CrateDetailsModal({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
             aria-label="Close"
             title="Close"
           >
@@ -745,31 +910,71 @@ function CrateDetailsModal({
               label="Harvest Reference"
               value={getHarvestLabel(crate, harvestLookup, harvestLookupStatus)}
             />
-            <SummaryDetail label="Farmer" value={firstValue(crate, ["farmer_name", "farmer.name", "harvest.farmer_name", "harvest.farmer.name"])} />
-            <SummaryDetail label="Farm" value={firstValue(crate, ["farm_name", "farm.name", "harvest.farm_name", "harvest.farm.name"])} />
-            <SummaryDetail label="Pond" value={firstValue(crate, ["pond_name", "pond.name", "pond_qr_code", "harvest.pond_name", "harvest.pond.name"])} />
+            <SummaryDetail label="Farmer" value={qualityInspection?.farmer_name} />
+            <SummaryDetail label="Farm" value={qualityInspection?.farm_name} />
+            <SummaryDetail
+              label="Pond"
+              value={qualityInspection?.pond_name || crate?.pond_name}
+            />
           </DetailSection>
 
           <DetailSection title="Quality">
             <StatusDetail label="Inspection Status" status={getQualityStatus(crate)} />
-            <SummaryDetail label="Inspection Date" value={formatDateTime(firstValue(crate, ["inspected_at", "inspection.inspected_at", "quality_inspection.inspected_at"]))} />
-            <SummaryDetail label="Quality Checker" value={getQualityChecker(crate)} />
-            <SummaryDetail label="Checker Code" value={getQualityCheckerCode(crate)} />
+            <SummaryDetail
+              label="Inspection Date"
+              value={formatDateTime(qualityInspection?.inspected_at)}
+            />
+            <SummaryDetail
+              label="Quality Checker"
+              value={qualityInspection?.checker_name}
+            />
+            <SummaryDetail label="Checker Code" value={qualityInspection?.checker_code} />
           </DetailSection>
 
           <DetailSection title="Packing">
-            <SummaryDetail label="Crate Packer" value={getPacker(crate)} />
-            <SummaryDetail label="Packer Code" value={getPackerCode(crate)} />
-            <SummaryDetail label="Packed At" value={formatDateTime(firstValue(crate, ["packed_at", "packing.packed_at"]))} />
+            <SummaryDetail label="Crate Packer" value={packedCrate?.crate_packer_name} />
+            <SummaryDetail label="Packer Code" value={packedCrate?.crate_packer_code} />
+            <SummaryDetail
+              label="Packed At"
+              value={formatDateTime(packedCrate?.packed_at || crate?.packed_at)}
+            />
+            <StatusDetail
+              label="Packing Status"
+              status={packedCrate?.packing_status || crate?.packing_status}
+            />
             <SummaryDetail label="Packing GPS" value={getGpsLabel(crate)} />
           </DetailSection>
 
           <DetailSection title="Transport">
-            <SummaryDetail label="Transport Operator" value={getOperator(crate)} />
-            <SummaryDetail label="Operator Code" value={getOperatorCode(crate)} />
-            <SummaryDetail label="Vehicle" value={getVehicle(crate)} />
-            <SummaryDetail label="Loaded At" value={formatDateTime(firstValue(crate, ["loaded_at", "transport.loaded_at"]))} />
-            <StatusDetail label="Transport Status" status={getTransportStatus(crate)} />
+            <SummaryDetail
+              label="Transport Operator"
+              value={
+                transportCrate?.transport_operator_name ||
+                transportOperator?.full_name
+              }
+            />
+            <SummaryDetail
+              label="Operator Code"
+              value={
+                transportCrate?.transport_operator_rv_id ||
+                transportOperator?.operator_rv_id
+              }
+            />
+            <SummaryDetail
+              label="Vehicle"
+              value={transportCrate?.vehicle_number || transportProgress?.vehicle_number}
+            />
+            <SummaryDetail
+              label="Loaded At"
+              value={formatDateTime(transportCrate?.loaded_at)}
+            />
+            <StatusDetail
+              label="Transport Status"
+              status={
+                transportCrate?.chain_of_custody_status ||
+                transportProgress?.dispatch_status
+              }
+            />
           </DetailSection>
 
           <DetailSection title="Timing">
@@ -816,7 +1021,7 @@ function TableHead({ children, className = "" }) {
   return (
     <th
       className={[
-        "whitespace-nowrap px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-500",
+        "whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500",
         className,
       ].join(" ")}
     >
@@ -827,7 +1032,7 @@ function TableHead({ children, className = "" }) {
 
 function TableCell({ children, className = "" }) {
   return (
-    <td className={["px-4 py-4 align-middle text-sm text-slate-700", className].join(" ")}>
+    <td className={["truncate whitespace-nowrap overflow-hidden px-3 py-3 align-middle text-sm text-slate-700", className].join(" ")}>
       {children}
     </td>
   );
@@ -902,7 +1107,7 @@ function IconButton({ title, onClick }) {
       title={title}
       aria-label={title}
       onClick={onClick}
-      className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
+      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
     >
       <Eye size={17} aria-hidden="true" />
     </button>
@@ -937,5 +1142,5 @@ function StatusDetail({ label, status }) {
 
 function OptionalStatusBadge({ status }) {
   if (!status) return <span className="text-sm font-semibold text-slate-400">Not available</span>;
-  return <TraderStatusBadge status={status} />;
+  return <TraderStatusBadge status={status} className="max-w-full truncate px-2" />;
 }

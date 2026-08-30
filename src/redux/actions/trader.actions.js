@@ -1,5 +1,11 @@
 import { traderService } from "../services/trader.service";
 import { saveToken, saveUser, removeToken, removeUser } from "../../utils/auth";
+import {
+  extractContractList,
+  normalizeCratePacker,
+  normalizeQualityChecker,
+  normalizeTransportOperator,
+} from "../../utils/staffNormalizers";
 
 import {
   TRADER_LOADING,
@@ -64,6 +70,10 @@ function extractList(response, keys) {
   if (Array.isArray(data?.data)) return data.data;
 
   return [];
+}
+
+function extractCrateList(response) {
+  return extractList(response, ["crates", "rows", "items"]);
 }
 
 function getErrorMessage(error, fallback) {
@@ -249,7 +259,9 @@ export const getQualityCheckers = () => async (dispatch) => {
 
     dispatch({
       type: QUALITY_CHECKERS_SUCCESS,
-      payload: extractList(response, ["quality_checkers", "qualityCheckers"]),
+      payload: extractContractList(response, "quality_checkers").map(
+        normalizeQualityChecker
+      ),
     });
 
     return response;
@@ -320,7 +332,9 @@ export const getCratePackers = () => async (dispatch) => {
 
     dispatch({
       type: CRATE_PACKERS_SUCCESS,
-      payload: extractList(response, ["crate_packers", "cratePackers"]),
+      payload: extractContractList(response, "crate_packers").map(
+        normalizeCratePacker
+      ),
     });
 
     return response;
@@ -396,10 +410,9 @@ export const getTransportOperators = () => async (dispatch) => {
 
     dispatch({
       type: TRANSPORT_OPERATORS_SUCCESS,
-      payload: extractList(response, [
-        "transport_operators",
-        "transportOperators",
-      ]),
+      payload: extractContractList(response, "transport_operators").map(
+        normalizeTransportOperator
+      ),
     });
 
     return response;
@@ -490,7 +503,7 @@ export const getCrates = (params = {}) => async (dispatch) => {
 
     dispatch({
       type: CRATES_SUCCESS,
-      payload: extractList(response, ["crates", "rows", "items"]),
+      payload: extractCrateList(response),
     });
 
     return response;

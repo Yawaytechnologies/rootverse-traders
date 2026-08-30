@@ -18,7 +18,6 @@ import TraderSelect from "../components/ui/TraderSelect";
 import TraderStatusBadge from "../components/ui/TraderStatusBadge";
 import TraderTextarea from "../components/ui/TraderTextarea";
 import {
-  buildProcurementPrintHtml,
   formatCurrency,
   formatOptionalCurrency,
   normalizeProcurement,
@@ -75,6 +74,18 @@ function getFirstValue(item = {}, keys = []) {
   }
 
   return "";
+}
+
+function getNestedObject(item = {}, keys = []) {
+  for (const key of keys) {
+    const value = item?.[key];
+
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return value;
+    }
+  }
+
+  return {};
 }
 
 function formatDate(value) {
@@ -285,6 +296,23 @@ function sumCrateWeight(crates = []) {
   return crates.reduce((sum, crate) => sum + toNumber(crate?.weight_kg), 0);
 }
 
+function getLoadedCratesValue(source = {}, crates = []) {
+  return (
+    getFirstValue(source, [
+      "loaded_crates",
+      "loadedCrates",
+      "crates_loaded",
+      "cratesLoaded",
+      "total_loaded",
+      "totalLoaded",
+    ]) ||
+    getFirstValue(source?.progress || {}, ["loaded"]) ||
+    (Array.isArray(source?.crates) ? source.crates.length : "") ||
+    crates.length ||
+    ""
+  );
+}
+
 function normalizePercent(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
@@ -410,7 +438,15 @@ function extractCreatedProcurement(response) {
   );
 }
 
-function openProcurementPrintWindow(procurement) {
+function unwrapPrintableResponse(response) {
+  if (typeof response === "string") return response;
+  if (typeof response?.data === "string") return response.data;
+  if (typeof response?.html === "string") return response.html;
+
+  return "";
+}
+
+async function openProcurementPrintWindow(procurement) {
   const printWindow = window.open("", "_blank");
 
   if (!printWindow) {
@@ -423,9 +459,16 @@ function openProcurementPrintWindow(procurement) {
   printWindow.document.close();
 
   try {
-    const html = buildProcurementPrintHtml(procurement);
-    const blob = new Blob([html], { type: "text/html" });
-    const objectUrl = URL.createObjectURL(blob);
+    const response = await traderService.getProcurementReceiptPrint(procurement.id);
+    const printable = unwrapPrintableResponse(response);
+
+    if (!printable) {
+      throw new Error("Printable procurement document is unavailable.");
+    }
+
+    const objectUrl = URL.createObjectURL(
+      new Blob([printable], { type: "text/html;charset=utf-8" })
+    );
 
     printWindow.location.href = objectUrl;
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
@@ -442,6 +485,8 @@ function getWorkflowReadiness(workflowData) {
   const inspections = workflowData?.qualityInspections || [];
   const crates = workflowData?.crates || [];
   const transport = workflowData?.transportProgress || null;
+  const transportCrates = Array.isArray(transport?.crates) ? transport.crates : [];
+  const loadedCrates = getLoadedCratesValue(transport || {}, transportCrates);
   const totalWeight = sumCrateWeight(crates);
   const latestInspection = getLatestInspection(inspections);
   const checkedInspection =
@@ -465,11 +510,17 @@ function getWorkflowReadiness(workflowData) {
     transportReady,
     ready: qualityReady && crateReady && transportReady,
     totalWeight,
+    loadedCrates,
     checkedInspection,
   };
 }
 
 function normalizeHarvest(item = {}) {
+  const harvest = getNestedObject(item, ["harvest", "harvest_request", "harvestRequest"]);
+  const harvestDetails = getNestedObject(item, [
+    "harvest_details",
+    "harvestDetails",
+  ]);
   const internalHarvestId =
     item.id || item.harvest_id || item.harvestId || item.booking_id;
 
@@ -644,9 +695,26 @@ function normalizeHarvest(item = {}) {
 
   const expectedSize =
     getFirstValue(item, [
+      "size_count",
+      "sizeCount",
+      "size",
+      "count_per_kg",
+      "countPerKg",
+      "grade_size",
+      "gradeSize",
+    ]) ||
+    getFirstValue(harvestDetails, [
+      "size",
+      "size_count",
+      "sizeCount",
+      "count_per_kg",
+      "countPerKg",
+      "grade_size",
+      "gradeSize",
+    ]) ||
+    getFirstValue(item, [
       "expected_size",
       "expectedSize",
-      "size",
       "count",
       "harvest_size",
       "harvestSize",
@@ -661,7 +729,11 @@ function normalizeHarvest(item = {}) {
   const traderCode =
     getFirstValue(item, ["trader_code", "traderCode"]) || "";
 
-  const species = getFirstValue(item, ["species"]) || "-";
+  const species =
+    getFirstValue(item, ["species"]) ||
+    getFirstValue(harvest, ["species"]) ||
+    getFirstValue(harvestDetails, ["species"]) ||
+    "-";
 
   const harvestMethod =
     getFirstValue(item, ["harvest_method", "harvestMethod"]) || "-";
@@ -1041,7 +1113,7 @@ export default function SourceProcurement() {
     setProcurementPrintError("");
   }, []);
 
-  const handlePrintProcurement = useCallback((procurement) => {
+  const handlePrintProcurement = useCallback(async (procurement) => {
     setProcurementPrintError("");
 
     if (!procurement?.id) {
@@ -1051,7 +1123,7 @@ export default function SourceProcurement() {
 
     try {
       setProcurementPrintId(String(procurement.id));
-      openProcurementPrintWindow(procurement);
+      await openProcurementPrintWindow(procurement);
     } catch {
       setProcurementPrintError("Unable to prepare procurement for printing.");
     } finally {
@@ -1385,11 +1457,11 @@ export default function SourceProcurement() {
       procurementLookup
     );
     const baseButtonClass =
-      "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10";
+      "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10";
     const createButtonClass =
-      "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/10";
+      "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/10";
     const printButtonClass =
-      "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10";
+      "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10";
 
     return (
       <>
@@ -1410,7 +1482,7 @@ export default function SourceProcurement() {
             onClick={() => openAcceptRequestModal(item)}
             title="Accept Request"
             aria-label="Accept Request"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
           >
             <Check size={18} aria-hidden="true" />
           </button>
@@ -1639,17 +1711,29 @@ export default function SourceProcurement() {
           </div>
 
           <div className="hidden p-4 md:block sm:p-6">
-            <div className="overflow-hidden rounded-2xl border border-slate-200">
-              <div className="max-w-full overflow-hidden">
+            <div className="rounded-2xl border border-slate-200">
+              <div className="w-full">
                 <table className="w-full table-fixed divide-y divide-slate-200 text-left">
+                  <colgroup>
+                    <col className="w-[15%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[10%]" />
+                  </colgroup>
                   <thead className="bg-slate-50">
                     <tr>
-                      <TableHead className="w-[18%]">Request</TableHead>
-                      <TableHead className="w-[25%]">Source</TableHead>
-                      <TableHead className="w-[12%]">Biomass</TableHead>
-                      <TableHead className="w-[15%]">Preferred Time</TableHead>
-                      <TableHead className="w-[12%]">Status</TableHead>
-                      <TableHead className="w-[170px] min-w-[170px] text-right">Actions</TableHead>
+                      <TableHead>Request</TableHead>
+                      <TableHead>Source</TableHead>
+                      <TableHead>Species</TableHead>
+                      <TableHead>Size Count</TableHead>
+                      <TableHead>Biomass</TableHead>
+                      <TableHead>Preferred Time</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </tr>
                   </thead>
 
@@ -1657,7 +1741,7 @@ export default function SourceProcurement() {
                     {loading ? (
                       <tr>
                         <td
-                          colSpan="6"
+                          colSpan="8"
                           className="px-5 py-12 text-center text-sm font-semibold text-slate-500"
                         >
                           Loading harvest requests...
@@ -1666,7 +1750,7 @@ export default function SourceProcurement() {
                     ) : filteredRequests.length === 0 ? (
                       <tr>
                         <td
-                          colSpan="6"
+                          colSpan="8"
                           className="px-5 py-12 text-center text-sm font-semibold text-slate-500"
                         >
                           No harvest requests found.
@@ -1681,7 +1765,7 @@ export default function SourceProcurement() {
                             key={`${item.id || index}-${item.referenceCode}`}
                             className="hover:bg-slate-50"
                           >
-                            <td className="px-5 py-5 align-middle">
+                            <td className="truncate whitespace-nowrap overflow-hidden px-3 py-3 align-middle">
                               <p className="truncate text-sm font-black text-slate-950">
                                 {item.referenceCode}
                               </p>
@@ -1690,7 +1774,7 @@ export default function SourceProcurement() {
                               </p>
                             </td>
 
-                            <td className="px-5 py-5 align-middle">
+                            <td className="truncate whitespace-nowrap overflow-hidden px-3 py-3 align-middle">
                               <p className="truncate text-sm font-bold text-slate-800">
                                 {item.sourceName}
                               </p>
@@ -1699,25 +1783,35 @@ export default function SourceProcurement() {
                               </p>
                             </td>
 
-                            <td className="px-5 py-5 align-middle text-sm font-semibold text-slate-700">
+                            <td className="truncate whitespace-nowrap overflow-hidden px-3 py-3 align-middle text-sm font-semibold text-slate-700">
+                              <span className="block truncate">{item.species}</span>
+                            </td>
+
+                            <td className="truncate whitespace-nowrap overflow-hidden px-3 py-3 align-middle text-sm font-semibold text-slate-700">
+                              <span className="block truncate">
+                                {formatExpectedSize(item.expectedSize)}
+                              </span>
+                            </td>
+
+                            <td className="truncate whitespace-nowrap overflow-hidden px-3 py-3 align-middle text-sm font-semibold text-slate-700">
                               <span className="block truncate">
                                 {formatKg(item.biomass)}
                               </span>
                             </td>
 
-                            <td className="px-5 py-5 align-middle text-sm font-semibold text-slate-700">
+                            <td className="truncate whitespace-nowrap overflow-hidden px-3 py-3 align-middle text-sm font-semibold text-slate-700">
                               <span className="block truncate">
                                 {formatDate(item.preferredTime)}
                               </span>
                             </td>
 
-                            <td className="px-5 py-5 align-middle">
+                            <td className="truncate whitespace-nowrap overflow-hidden px-3 py-3 align-middle">
                               <TraderStatusBadge
                                 status={statusLabel(getCanonicalHarvestStatus(item))}
                               />
                             </td>
 
-                            <td className="w-[170px] min-w-[170px] px-4 py-5 align-middle">
+                            <td className="truncate whitespace-nowrap overflow-hidden px-3 py-3 align-middle">
                               <div className="flex flex-nowrap items-center justify-end gap-2">
                                 {renderHarvestActions(item, isBusy)}
                               </div>
@@ -2091,7 +2185,7 @@ function TableHead({ children, className = "" }) {
   return (
     <th
       className={[
-        "whitespace-nowrap px-5 py-4 text-xs font-black uppercase tracking-wide text-slate-500",
+        "whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500",
         className,
       ].join(" ")}
     >
@@ -2228,7 +2322,7 @@ function WorkflowSection({
             <Detail label="Operator" value={transport?.transport_operator?.full_name} />
             <Detail label="Vehicle" value={transport?.vehicle_number} />
             <Detail label="Total Packed Crates" value={transport?.total_packed_crates} />
-            <Detail label="Loaded Crates" value={transport?.loaded_crates} />
+            <Detail label="Loaded Crates" value={readiness.loadedCrates} />
             <Detail label="Remaining Crates" value={transport?.remaining_crates} />
             <Detail
               label="Dispatch Status"

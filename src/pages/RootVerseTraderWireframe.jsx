@@ -97,9 +97,9 @@ const batchRows = [
 ];
 
 const operationalUsers = [
-  { name: "Kumar", role: "Quality Inspector", mobile: "98765 43210", status: "Active" },
-  { name: "Mani", role: "Crate Packer", mobile: "98765 43211", status: "Active" },
-  { name: "Ravi", role: "Transport Operator", mobile: "98765 43212", status: "Active" },
+  { name: "Kumar", role: "Quality Inspector", mobile: "10 digit mobile", status: "Active" },
+  { name: "Mani", role: "Crate Packer", mobile: "10 digit mobile", status: "Active" },
+  { name: "Ravi", role: "Transport Operator", mobile: "10 digit mobile", status: "Active" },
   { name: "TN-01-AB-2345", role: "Transport Vehicle", mobile: "Cold-chain vehicle", status: "Active" },
 ];
 

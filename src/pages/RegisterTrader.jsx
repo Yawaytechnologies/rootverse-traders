@@ -80,8 +80,6 @@ const RegisterTrader = () => {
         company_logo: formData.company_logo,
       };
 
-      console.log("REGISTER TRADER PAYLOAD:", payload);
-
       await registerTrader(payload);
 
       setSuccess(
@@ -168,7 +166,7 @@ const RegisterTrader = () => {
                 )
               }
               className="w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-500"
-              placeholder="9876543210"
+              placeholder="10 digit mobile number"
             />
           </div>
 
@@ -181,7 +179,7 @@ const RegisterTrader = () => {
               value={formData.email}
               onChange={(e) => updateField("email", e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-500"
-              placeholder="trader@example.com"
+              placeholder="name@company.com"
             />
           </div>
 

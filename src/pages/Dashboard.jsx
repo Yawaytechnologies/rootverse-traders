@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Boxes, ClipboardCheck, Package, Truck } from "lucide-react";
 import {
@@ -56,7 +56,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const loadDashboard = async () => {
+  const loadDashboard = useCallback(async () => {
     try {
       setLoading(true);
       setError("");
@@ -68,9 +68,6 @@ const Dashboard = () => {
 
       const profileData = unwrap(profileResponse);
       const dashboardData = unwrap(dashboardResponse);
-
-      console.log("PROFILE API DATA:", profileData);
-      console.log("DASHBOARD API DATA:", dashboardData);
 
       setProfile(profileData);
       setDashboard(dashboardData);
@@ -89,11 +86,17 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [navigate]);
 
   useEffect(() => {
-    loadDashboard();
-  }, []);
+    const timer = window.setTimeout(() => {
+      loadDashboard();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [loadDashboard]);
 
   const qualityCheckersValue =
     dashboard?.quality_checkers_count ||

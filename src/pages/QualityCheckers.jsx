@@ -16,6 +16,11 @@ import {
   extractHarvestList,
   getHarvestReference,
 } from "../utils/harvestReference";
+import {
+  formatLocationLabel,
+  mergeLocationLookup,
+  normalizeLocation,
+} from "../utils/locationNormalizers";
 
 const initialForm = {
   checker_name: "",
@@ -54,8 +59,6 @@ function extractArray(response, key) {
   if (Array.isArray(data?.states)) return data.states;
   if (Array.isArray(data?.districts)) return data.districts;
   if (Array.isArray(data?.locations)) return data.locations;
-  if (Array.isArray(data?.qualityCheckers)) return data.qualityCheckers;
-  if (Array.isArray(data?.quality_checkers)) return data.quality_checkers;
 
   return [];
 }
@@ -116,7 +119,7 @@ function getItemName(item) {
 }
 
 function getCheckerId(item) {
-  return item?.id || item?._id || item?.quality_checker_id || item?.checker_id;
+  return item?.id;
 }
 
 function getInspectionId(item) {
@@ -177,18 +180,32 @@ function formatDateTime(value) {
   }).format(date);
 }
 
-function getLocationName(item) {
-  return (
-    item?.location_name ||
-    item?.locationName ||
-    item?.location?.name ||
-    item?.location?.location_name ||
-    ""
-  );
+function getLocationName(item, locationLookup = new Map()) {
+  const locationId = item?.location_id;
+
+  if (locationId === undefined || locationId === null || locationId === "") {
+    return "";
+  }
+
+  return formatLocationLabel(locationLookup.get(String(locationId)), {
+    compact: true,
+  });
+}
+
+function getLocationDetails(item, locationLookup = new Map()) {
+  const locationId = item?.location_id;
+
+  if (locationId === undefined || locationId === null || locationId === "") {
+    return null;
+  }
+
+  return locationLookup.get(String(locationId)) || null;
 }
 
 function getCheckerStatus(item) {
-  return item?.is_active === false ? "Inactive" : "Active";
+  if (item?.is_active === false) return "Inactive";
+  if (item?.is_active === true) return "Active";
+  return "Not available";
 }
 
 function getInspectionStatus(item) {
@@ -213,7 +230,6 @@ function getInspectorLabel(item) {
       "quality_checker_name",
       "inspector.checker_name",
       "inspector.name",
-      "quality_checker_id",
     ])
   );
 }
@@ -267,6 +283,7 @@ export default function QualityCheckers() {
   const [states, setStates] = useState([]);
   const [districts, setDistricts] = useState([]);
   const [locations, setLocations] = useState([]);
+  const [locationLookup, setLocationLookup] = useState(() => new Map());
   const [masterLoading, setMasterLoading] = useState(false);
   const [masterError, setMasterError] = useState("");
 
@@ -309,11 +326,103 @@ export default function QualityCheckers() {
     [logsLoaded, logsLoading]
   );
 
+  const loadLocationLookup = useCallback(async (countryList = []) => {
+    try {
+      const countryItems = Array.isArray(countryList) ? countryList : [];
+
+      const stateLists = await Promise.all(
+        countryItems.map(async (country) => {
+          const countryId = getItemId(country);
+          if (!countryId) return [];
+          const response = await traderService.getStatesByCountry(countryId);
+          return extractArray(response, "states").map((state) => ({
+            state,
+            country,
+          }));
+        })
+      );
+
+      const districtLists = await Promise.all(
+        stateLists.flat().map(async ({ state, country }) => {
+          const stateId = getItemId(state);
+          if (!stateId) return [];
+          const response = await traderService.getDistrictsByState(stateId);
+          return extractArray(response, "districts").map((district) => ({
+            district,
+            state,
+            country,
+          }));
+        })
+      );
+
+      const locationLists = await Promise.all(
+        districtLists.flat().map(async ({ district, state, country }) => {
+          const districtId = getItemId(district);
+          if (!districtId) return [];
+          const response = await traderService.getLocationsByDistrict(districtId);
+          return {
+            locations: extractArray(response, "locations"),
+            context: { district, state, country },
+          };
+        })
+      );
+
+      const nextLookup = locationLists.reduce((lookup, entry) => {
+        return mergeLocationLookup(lookup, entry.locations, entry.context);
+      }, new Map());
+      setLocationLookup(nextLookup);
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
+  useEffect(() => {
+    let ignore = false;
+
+    const missingLocationIds = Array.from(
+      new Set(
+        (Array.isArray(qualityCheckers) ? qualityCheckers : [])
+          .map((checker) => checker?.location_id)
+          .filter((locationId) => locationId !== undefined && locationId !== null && locationId !== "")
+          .map(String)
+      )
+    ).filter((locationId) => !locationLookup.has(locationId));
+
+    if (!missingLocationIds.length) return undefined;
+
+    Promise.all(
+      missingLocationIds.map((locationId) =>
+        traderService
+          .getLocationById(locationId)
+          .then((response) => normalizeLocation(unwrapObject(response)))
+          .catch((err) => {
+            console.error(err);
+            return null;
+          })
+      )
+    ).then((locations) => {
+      if (ignore) return;
+      setLocationLookup((prev) => {
+        const next = new Map(prev);
+        locations.filter(Boolean).forEach((location) => {
+          if (location.id) {
+            next.set(location.id, location);
+          }
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      ignore = true;
+    };
+  }, [locationLookup, qualityCheckers]);
+
   useEffect(() => {
     let ignore = false;
 
     dispatch(getQualityCheckers()).catch(() => {});
-    loadCountries();
+    loadCountries().then((items) => loadLocationLookup(items));
 
     traderService
       .getHarvestRequests()
@@ -334,7 +443,7 @@ export default function QualityCheckers() {
     return () => {
       ignore = true;
     };
-  }, [dispatch]);
+  }, [dispatch, loadLocationLookup]);
 
   const filteredInspectors = useMemo(() => {
     const list = Array.isArray(qualityCheckers) ? qualityCheckers : [];
@@ -348,7 +457,7 @@ export default function QualityCheckers() {
         item?.checker_name,
         item?.checker_phone,
         item?.checker_email,
-        getLocationName(item),
+        getLocationName(item, locationLookup),
       ]
         .filter(Boolean)
         .join(" ")
@@ -356,7 +465,7 @@ export default function QualityCheckers() {
 
       return statusMatches && (!query || searchable.includes(query));
     });
-  }, [qualityCheckers, searchText, statusFilter]);
+  }, [locationLookup, qualityCheckers, searchText, statusFilter]);
 
   function handleTabChange(tabKey) {
     setActiveTab(tabKey);
@@ -399,10 +508,13 @@ export default function QualityCheckers() {
       setMasterError("");
 
       const response = await traderService.getCountries();
-      setCountries(extractArray(response, "countries"));
+      const list = extractArray(response, "countries");
+      setCountries(list);
+      return list;
     } catch (err) {
       console.error(err);
       setMasterError("Country list fetch failed");
+      return [];
     } finally {
       setMasterLoading(false);
     }
@@ -450,7 +562,14 @@ export default function QualityCheckers() {
       setMasterError("");
 
       const response = await traderService.getLocationsByDistrict(districtId);
-      setLocations(extractArray(response, "locations"));
+      const list = extractArray(response, "locations");
+      setLocations(list);
+      setLocationLookup((prev) => {
+        const district = districts.find((item) => String(getItemId(item)) === String(districtId));
+        const state = states.find((item) => String(getItemId(item)) === String(form.state_id));
+        const country = countries.find((item) => String(getItemId(item)) === String(form.country_id));
+        return mergeLocationLookup(prev, list, { district, state, country });
+      });
     } catch (err) {
       console.error(err);
       setMasterError("Location list fetch failed");
@@ -478,7 +597,6 @@ export default function QualityCheckers() {
         page: 1,
         page_size: 20,
       });
-
       setInspectorHistory(extractActivityRecords(response));
     } catch (err) {
       console.error(err);
@@ -520,7 +638,6 @@ export default function QualityCheckers() {
       const response = await traderService.getQualityInspectionById(
         inspectionId
       );
-
       setInspectionDetail(unwrapObject(response));
     } catch (err) {
       console.error(err);
@@ -670,6 +787,7 @@ export default function QualityCheckers() {
             onRefresh={refreshInspectors}
             onCreate={openCreateModal}
             onView={openInspectorDetails}
+            locationLookup={locationLookup}
           />
         </>
       ) : (
@@ -720,6 +838,7 @@ export default function QualityCheckers() {
             harvestLookupStatus={harvestLookupStatus}
             loading={historyLoading}
             error={historyError}
+            locationLookup={locationLookup}
             onClose={closeInspectorDetails}
           onRetry={() => loadInspectorHistory(selectedInspector)}
           onViewInspection={openInspectionDetail}
@@ -858,6 +977,7 @@ function InspectorList({
   loading,
   searchText,
   statusFilter,
+  locationLookup,
   onSearchChange,
   onStatusFilterChange,
   onRefresh,
@@ -865,7 +985,7 @@ function InspectorList({
   onView,
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
+    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
       <div className="space-y-4 border-b border-gray-200 p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -920,7 +1040,16 @@ function InspectorList({
       </div>
 
       <div className="hidden md:block">
-        <table className="w-full text-left text-sm">
+        <table className="w-full table-fixed text-left">
+          <colgroup>
+            <col className="w-[12%]" />
+            <col className="w-[17%]" />
+            <col className="w-[14%]" />
+            <col className="w-[24%]" />
+            <col className="w-[15%]" />
+            <col className="w-[10%]" />
+            <col className="w-[8%]" />
+          </colgroup>
           <thead className="bg-gray-50 text-gray-600">
             <tr>
               <TableHead>Code</TableHead>
@@ -942,6 +1071,7 @@ function InspectorList({
                   <InspectorTableRow
                     key={getCheckerId(item)}
                     inspector={item}
+                    locationLookup={locationLookup}
                     onView={onView}
                   />
                 ))
@@ -960,6 +1090,7 @@ function InspectorList({
             <InspectorMobileCard
               key={getCheckerId(item)}
               inspector={item}
+              locationLookup={locationLookup}
               onView={onView}
             />
           ))
@@ -969,16 +1100,20 @@ function InspectorList({
   );
 }
 
-function InspectorTableRow({ inspector, onView }) {
+function InspectorTableRow({ inspector, locationLookup, onView }) {
+  const locationLabel = getLocationName(inspector, locationLookup);
+
   return (
     <tr className="border-t border-gray-100">
       <TableCell className="font-bold text-slate-900">
         {valueOrNotAvailable(inspector?.checker_code)}
       </TableCell>
-      <TableCell>{valueOrNotAvailable(inspector?.checker_name)}</TableCell>
-      <TableCell>{valueOrNotAvailable(inspector?.checker_phone)}</TableCell>
-      <TableCell>{valueOrNotAvailable(inspector?.checker_email)}</TableCell>
-      <TableCell>{valueOrNotAvailable(getLocationName(inspector))}</TableCell>
+      <TableCell className="truncate">{valueOrNotAvailable(inspector?.checker_name)}</TableCell>
+      <TableCell className="truncate">{valueOrNotAvailable(inspector?.checker_phone)}</TableCell>
+      <TableCell className="truncate">{valueOrNotAvailable(inspector?.checker_email)}</TableCell>
+      <TableCell className="truncate" title={locationLabel}>
+        {valueOrNotAvailable(locationLabel)}
+      </TableCell>
       <TableCell>
         <TraderStatusBadge status={getCheckerStatus(inspector)} />
       </TableCell>
@@ -993,7 +1128,7 @@ function InspectorTableRow({ inspector, onView }) {
   );
 }
 
-function InspectorMobileCard({ inspector, onView }) {
+function InspectorMobileCard({ inspector, locationLookup, onView }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -1010,7 +1145,7 @@ function InspectorMobileCard({ inspector, onView }) {
       <div className="mt-4 grid gap-3">
         <SummaryDetail label="Mobile" value={inspector?.checker_phone} />
         <SummaryDetail label="Email" value={inspector?.checker_email} />
-        <SummaryDetail label="Location" value={getLocationName(inspector)} />
+        <SummaryDetail label="Location" value={getLocationName(inspector, locationLookup)} />
       </div>
       <div className="mt-4">
         <TraderButton
@@ -1035,10 +1170,13 @@ function InspectorDetailsModal({
   harvestLookupStatus,
   loading,
   error,
+  locationLookup,
   onClose,
   onRetry,
   onViewInspection,
 }) {
+  const location = getLocationDetails(inspector, locationLookup);
+
   return (
     <ModalShell title="Quality Inspector Details" onClose={onClose}>
       <div className="space-y-5">
@@ -1047,7 +1185,10 @@ function InspectorDetailsModal({
           <SummaryDetail label="Checker Name" value={inspector?.checker_name} />
           <SummaryDetail label="Mobile" value={inspector?.checker_phone} />
           <SummaryDetail label="Email" value={inspector?.checker_email} />
-          <SummaryDetail label="Location" value={getLocationName(inspector)} />
+          <SummaryDetail label="Location" value={location?.name} />
+          <SummaryDetail label="District" value={location?.districtName} />
+          <SummaryDetail label="State" value={location?.stateName} />
+          <SummaryDetail label="Country" value={location?.countryName} />
           <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-3">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
               Status
@@ -1058,7 +1199,7 @@ function InspectorDetailsModal({
           </div>
         </section>
 
-        <section className="overflow-hidden rounded-2xl border border-slate-200">
+        <section className="rounded-2xl border border-slate-200">
           <div className="flex flex-col gap-3 border-b border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-sm font-black uppercase tracking-wide text-slate-700">
@@ -1107,7 +1248,15 @@ function InspectionHistoryTable({
   return (
     <>
       <div className="hidden md:block">
-        <table className="w-full text-left text-sm">
+        <table className="w-full table-fixed text-left">
+          <colgroup>
+            <col className="w-[24%]" />
+            <col className="w-[22%]" />
+            <col className="w-[18%]" />
+            <col className="w-[14%]" />
+            <col className="w-[12%]" />
+            <col className="w-[10%]" />
+          </colgroup>
           <thead className="bg-gray-50 text-gray-600">
             <tr>
               <TableHead>Harvest Reference</TableHead>
@@ -1249,7 +1398,7 @@ function InspectionLogsTab({
   onView,
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
+    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
       <div className="flex flex-col gap-3 border-b border-gray-200 p-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-gray-900">
@@ -1272,7 +1421,16 @@ function InspectionLogsTab({
       ) : null}
 
       <div className="hidden md:block">
-        <table className="w-full text-left text-sm">
+        <table className="w-full table-fixed text-left">
+          <colgroup>
+            <col className="w-[20%]" />
+            <col className="w-[15%]" />
+            <col className="w-[18%]" />
+            <col className="w-[10%]" />
+            <col className="w-[17%]" />
+            <col className="w-[12%]" />
+            <col className="w-[8%]" />
+          </colgroup>
           <thead className="bg-gray-50 text-gray-600">
             <tr>
               <TableHead>Harvest Reference</TableHead>
@@ -1602,7 +1760,7 @@ function TableHead({ children, className = "" }) {
   return (
     <th
       className={[
-        "whitespace-nowrap px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-500",
+        "whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500",
         className,
       ].join(" ")}
     >
@@ -1613,7 +1771,7 @@ function TableHead({ children, className = "" }) {
 
 function TableCell({ children, className = "" }) {
   return (
-    <td className={["px-4 py-4 align-middle text-sm text-slate-700", className].join(" ")}>
+    <td className={["truncate whitespace-nowrap overflow-hidden px-3 py-3 align-middle text-sm text-slate-700", className].join(" ")}>
       {children}
     </td>
   );
@@ -1660,7 +1818,7 @@ function IconButton({ title, onClick, disabled = false }) {
       aria-label={title}
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
+      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
     >
       <Eye size={17} aria-hidden="true" />
     </button>
@@ -1745,7 +1903,7 @@ function CreateModalShell({
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
             aria-label="Close"
             title="Close"
           >
@@ -1789,7 +1947,7 @@ function ModalShell({ title, onClose, children }) {
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
             aria-label="Close"
             title="Close"
           >

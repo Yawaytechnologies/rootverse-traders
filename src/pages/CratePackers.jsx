@@ -57,8 +57,6 @@ function extractArray(response, key) {
   if (Array.isArray(data?.states)) return data.states;
   if (Array.isArray(data?.districts)) return data.districts;
   if (Array.isArray(data?.locations)) return data.locations;
-  if (Array.isArray(data?.cratePackers)) return data.cratePackers;
-  if (Array.isArray(data?.crate_packers)) return data.crate_packers;
   if (Array.isArray(data?.crates)) return data.crates;
 
   return [];
@@ -97,7 +95,7 @@ function getItemName(item) {
 }
 
 function getPackerId(item) {
-  return item?.id || "";
+  return item?.id;
 }
 
 function getPackerCode(item) {
@@ -130,22 +128,13 @@ function getPackerStatus(item) {
   return "Not available";
 }
 
-function getLocationName(item) {
-  return (
-    item?.location_name ||
-    item?.locationName ||
-    item?.location?.name ||
-    item?.location?.location_name ||
-    ""
-  );
+function getLocationName() {
+  return "";
 }
 
 function getAddressLocation(item) {
   const address = item?.address || "";
-  const location = getLocationName(item);
-
-  if (address && location) return `${address} / ${location}`;
-  return address || location;
+  return address;
 }
 
 function getHarvestId(item) {
@@ -193,6 +182,56 @@ function hasReadableValue(value) {
   return true;
 }
 
+function getFirstValue(item = {}, keys = []) {
+  for (const key of keys) {
+    const value = item?.[key];
+
+    if (value !== undefined && value !== null && value !== "") {
+      return value;
+    }
+  }
+
+  return "";
+}
+
+function sumCrateWeights(crates = []) {
+  return crates.reduce((sum, crate) => sum + toNumericWeight(crate?.weight_kg), 0);
+}
+
+function getTotalCratesValue(source = {}, crates = []) {
+  return (
+    getFirstValue(source, [
+      "total_crates",
+      "total_crates_packed",
+      "totalCrates",
+      "crate_count",
+      "crateCount",
+      "number_of_crates",
+      "numberOfCrates",
+      "packed_crates_count",
+      "packedCratesCount",
+    ]) ||
+    (Array.isArray(source?.crates) ? source.crates.length : "") ||
+    crates.length
+  );
+}
+
+function getTotalWeightValue(source = {}, crates = []) {
+  return (
+    getFirstValue(source, [
+      "total_weight",
+      "totalWeight",
+      "total_weight_kg",
+      "totalWeightKg",
+      "weight_kg",
+      "weightKg",
+      "packed_weight",
+      "packedWeight",
+    ]) ||
+    sumCrateWeights(Array.isArray(source?.crates) ? source.crates : crates)
+  );
+}
+
 function formatStatusLabel(status) {
   const value = String(status || "").trim();
 
@@ -237,18 +276,22 @@ function formatDateTime(value) {
 }
 
 function toNumericWeight(value) {
-  const number = Number(value);
+  const number = typeof value === "string" ? Number.parseFloat(value) : Number(value);
   return Number.isFinite(number) ? number : 0;
 }
 
 function formatWeight(value) {
+  if (typeof value === "string" && value.trim().toLowerCase().includes("kg")) {
+    return value;
+  }
+
   const number = Number(value);
 
   if (!Number.isFinite(number)) {
     return "Not available";
   }
 
-  return `${number.toFixed(2)} kg`;
+  return `${number.toFixed(2)} KG`;
 }
 
 function hasPaginationMetadata(payload) {
@@ -329,10 +372,39 @@ function groupActivityByHarvest(records, paginated) {
   });
 
   return Array.from(map.values()).map((item) => {
-    const totalWeight = item.records.reduce(
-      (sum, record) => sum + toNumericWeight(record?.weight_kg),
-      0
-    );
+    const sourceWithTotals =
+      item.records.find((record) =>
+        hasReadableValue(
+          getFirstValue(record, [
+            "total_crates",
+            "total_crates_packed",
+            "totalCrates",
+            "crate_count",
+            "crateCount",
+            "number_of_crates",
+            "numberOfCrates",
+            "packed_crates_count",
+            "packedCratesCount",
+          ])
+        )
+      ) ||
+      item.records.find((record) =>
+        hasReadableValue(
+          getFirstValue(record, [
+            "total_weight",
+            "totalWeight",
+            "total_weight_kg",
+            "totalWeightKg",
+            "weight_kg",
+            "weightKg",
+            "packed_weight",
+            "packedWeight",
+          ])
+        )
+      ) ||
+      {};
+    const totalCrates = getTotalCratesValue(sourceWithTotals, item.records);
+    const totalWeight = getTotalWeightValue(sourceWithTotals, item.records);
     const status =
       item.records.find((record) => record?.packing_status)?.packing_status ||
       "";
@@ -341,11 +413,11 @@ function groupActivityByHarvest(records, paginated) {
       harvest_id: item.harvest_id,
       harvest_reference: getActivityHarvestReference(item.records),
       packing_date: getLatestDate(item.records),
-      total_crates: paginated ? null : item.records.length,
-      total_weight: paginated ? null : totalWeight,
+      total_crates: totalCrates,
+      total_weight: totalWeight,
       status,
       records: item.records,
-      derivedFromLoadedRecords: !paginated,
+      derivedFromLoadedRecords: !paginated && !hasReadableValue(sourceWithTotals?.total_crates),
     };
   });
 }
@@ -617,6 +689,7 @@ export default function CratePackers() {
       setHarvestAttributionLimited(false);
 
       const response = await traderService.getHarvestPackedCrates(harvestId);
+      const payload = unwrapPayload(response);
       const crates = extractArray(response, "data");
       const hasPackerField = crates.some(
         (crate) => crate?.crate_packer_id !== undefined && crate?.crate_packer_id !== null
@@ -626,6 +699,7 @@ export default function CratePackers() {
           ? crates.filter((crate) => sameId(crate?.crate_packer_id, packerId))
           : crates;
 
+      setHarvestDetail({ ...(historyRow || { harvest_id: harvestId }), ...payload });
       setHarvestAttributionLimited(!hasPackerField && crates.length > 0);
       setHarvestCrates(visibleCrates);
     } catch (err) {
@@ -993,7 +1067,7 @@ function CratePackerList({
   onView,
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
+    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
       <div className="space-y-4 border-b border-gray-200 p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -1048,7 +1122,16 @@ function CratePackerList({
       </div>
 
       <div className="hidden md:block">
-        <table className="w-full text-left text-sm">
+        <table className="w-full table-fixed text-left">
+          <colgroup>
+            <col className="w-[13%]" />
+            <col className="w-[18%]" />
+            <col className="w-[14%]" />
+            <col className="w-[20%]" />
+            <col className="w-[20%]" />
+            <col className="w-[7%]" />
+            <col className="w-[8%]" />
+          </colgroup>
           <thead className="bg-gray-50 text-gray-600">
             <tr>
               <TableHead>Code</TableHead>
@@ -1203,7 +1286,7 @@ function PackerDetailsModal({
           </div>
         </section>
 
-        <section className="overflow-hidden rounded-2xl border border-slate-200">
+        <section className="rounded-2xl border border-slate-200">
           <div className="flex flex-col gap-3 border-b border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-sm font-black uppercase tracking-wide text-slate-700">
@@ -1267,15 +1350,23 @@ function HarvestHistoryTable({
   return (
     <>
       <div className="hidden md:block">
-        <table className="w-full text-left text-sm">
+        <table className="w-full table-fixed text-left">
+          <colgroup>
+            <col className="w-[25%]" />
+            <col className="w-[20%]" />
+            <col className="w-[15%]" />
+            <col className="w-[15%]" />
+            <col className="w-[15%]" />
+            <col className="w-[10%]" />
+          </colgroup>
           <thead className="bg-gray-50 text-gray-600">
             <tr>
-              <TableHead>Harvest Reference</TableHead>
-              <TableHead>Packing Date</TableHead>
-              <TableHead>Total Crates</TableHead>
-              <TableHead>Total Weight</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="w-[25%]">Harvest Reference</TableHead>
+              <TableHead className="w-[20%]">Packing Date</TableHead>
+              <TableHead className="w-[15%]">Total Crates</TableHead>
+              <TableHead className="w-[15%]">Total Weight</TableHead>
+              <TableHead className="w-[15%]">Status</TableHead>
+              <TableHead className="w-[10%] text-right">Actions</TableHead>
             </tr>
           </thead>
           <tbody>
@@ -1328,12 +1419,11 @@ function HarvestHistoryRow({
   row,
   harvestLookup,
   harvestLookupStatus,
-  paginated,
   onView,
 }) {
   return (
     <tr className="border-t border-gray-100">
-      <TableCell className="font-bold text-slate-900">
+      <TableCell className="truncate font-bold text-slate-900">
         {getHarvestReference(row, harvestLookup, {
           loading: harvestLookupStatus === "loading",
           error: harvestLookupStatus === "error",
@@ -1341,10 +1431,10 @@ function HarvestHistoryRow({
       </TableCell>
       <TableCell>{formatDateTime(row.packing_date)}</TableCell>
       <TableCell>
-        {paginated ? "Not available" : valueOrNotAvailable(row.total_crates)}
+        {valueOrNotAvailable(row.total_crates)}
       </TableCell>
       <TableCell>
-        {paginated ? "Not available" : formatWeight(row.total_weight)}
+        {formatWeight(row.total_weight)}
       </TableCell>
       <TableCell>
         <TraderStatusBadge status={valueOrNotAvailable(row.status)} />
@@ -1364,7 +1454,6 @@ function HarvestHistoryMobileCard({
   row,
   harvestLookup,
   harvestLookupStatus,
-  paginated,
   onView,
 }) {
   return (
@@ -1386,11 +1475,11 @@ function HarvestHistoryMobileCard({
       <div className="mt-4 grid gap-3">
         <SummaryDetail
           label="Total Crates"
-          value={paginated ? "Not available" : row.total_crates}
+          value={valueOrNotAvailable(row.total_crates)}
         />
         <SummaryDetail
           label="Total Weight"
-          value={paginated ? "Not available" : formatWeight(row.total_weight)}
+          value={formatWeight(row.total_weight)}
         />
       </div>
       <div className="mt-4">
@@ -1422,10 +1511,8 @@ function HarvestPackingDetailModal({
   onRetry,
 }) {
   const latestPackedAt = getLatestDate(crates);
-  const totalWeight = crates.reduce(
-    (sum, crate) => sum + toNumericWeight(crate?.weight_kg),
-    0
-  );
+  const totalCrates = getTotalCratesValue(harvest, crates);
+  const totalWeight = getTotalWeightValue(harvest, crates);
   const harvestReference = getHarvestReference(harvest, harvestLookup, {
     loading: harvestLookupStatus === "loading",
     error: harvestLookupStatus === "error",
@@ -1472,9 +1559,9 @@ function HarvestPackingDetailModal({
             {hasReadableValue(getPackerCode(packer)) ? (
               <SummaryDetail label="Packer Code" value={getPackerCode(packer)} />
             ) : null}
-            <SummaryDetail label="Total Crates" value={crates.length} />
+            <SummaryDetail label="Total Crates" value={valueOrNotAvailable(totalCrates)} />
             <SummaryDetail
-              label="Total Packed Weight"
+              label="Total Weight"
               value={formatWeight(totalWeight)}
             />
           </section>
@@ -1500,7 +1587,7 @@ function HarvestPackingDetailModal({
             </div>
           ) : null}
 
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <section className="rounded-2xl border border-slate-200 bg-white">
             <div className="border-b border-slate-200 p-4">
               <h3 className="text-sm font-black uppercase tracking-wide text-slate-700">
                 Crates
@@ -1522,7 +1609,16 @@ function CrateTable({ crates }) {
   return (
     <>
       <div className="hidden md:block">
-        <table className="w-full text-left text-sm">
+        <table className="w-full table-fixed text-left">
+          <colgroup>
+            <col className="w-[18%]" />
+            <col className="w-[15%]" />
+            <col className="w-[12%]" />
+            <col className="w-[12%]" />
+            <col className="w-[13%]" />
+            <col className="w-[17%]" />
+            <col className="w-[13%]" />
+          </colgroup>
           <thead className="bg-gray-50 text-gray-600">
             <tr>
               <TableHead>Crate Code</TableHead>
@@ -1679,7 +1775,7 @@ function TableHead({ children, className = "" }) {
   return (
     <th
       className={[
-        "whitespace-nowrap px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-500",
+        "whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500",
         className,
       ].join(" ")}
     >
@@ -1690,7 +1786,7 @@ function TableHead({ children, className = "" }) {
 
 function TableCell({ children, className = "" }) {
   return (
-    <td className={["px-4 py-4 align-middle text-sm text-slate-700", className].join(" ")}>
+    <td className={["truncate whitespace-nowrap overflow-hidden px-3 py-3 align-middle text-sm text-slate-700", className].join(" ")}>
       {children}
     </td>
   );
@@ -1737,7 +1833,7 @@ function IconButton({ title, onClick, disabled = false }) {
       aria-label={title}
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
+      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
     >
       <Eye size={17} aria-hidden="true" />
     </button>
@@ -1804,7 +1900,7 @@ function CreateModalShell({
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
             aria-label="Close"
             title="Close"
           >
@@ -1848,7 +1944,7 @@ function ModalShell({ title, onClose, children }) {
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-emerald-500/10"
             aria-label="Close"
             title="Close"
           >

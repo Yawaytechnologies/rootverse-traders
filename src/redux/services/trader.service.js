@@ -256,6 +256,13 @@ export const traderService = {
     });
   },
 
+  getLocationById(locationId) {
+    return httpClient(`/api/locations/${locationId}`, {
+      method: "GET",
+      auth: true,
+    });
+  },
+
   getQualityCheckers() {
     return httpClient("/api/traders/quality-checkers", {
       method: "GET",
@@ -550,6 +557,24 @@ export const traderService = {
     });
   },
 
+  getProcurementReceiptPrint(procurementId) {
+    const safeProcurementId = requirePathValue(
+      procurementId,
+      "Procurement reference is missing"
+    );
+
+    return httpClient(
+      `/api/payment-receipts/procurements/${safeProcurementId}/receipt/print`,
+      {
+        method: "GET",
+        auth: true,
+        headers: {
+          Accept: "text/html,application/pdf",
+        },
+      }
+    );
+  },
+
   verifyPaymentReceipt(verificationToken) {
     const safeVerificationToken = requirePathValue(
       verificationToken,
@@ -614,6 +639,7 @@ export const recordProcurementPayment = traderService.recordProcurementPayment;
 export const getPaymentReceipt = traderService.getPaymentReceipt;
 export const getPaymentReceipts = traderService.getPaymentReceipts;
 export const getPaymentReceiptPrint = traderService.getPaymentReceiptPrint;
+export const getProcurementReceiptPrint = traderService.getProcurementReceiptPrint;
 export const verifyPaymentReceipt = traderService.verifyPaymentReceipt;
 
 export default traderService;

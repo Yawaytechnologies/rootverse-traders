@@ -30,12 +30,12 @@ const initialState = {
   },
 
   profile: {
-    traderName: "RootVerse Trader",
-    traderId: "TRD-001",
-    email: "trader@example.com",
-    phone: "+91 98765 43210",
-    location: "Chennai, Tamil Nadu",
-    status: "Active",
+    traderName: "",
+    traderId: "",
+    email: "",
+    phone: "",
+    location: "",
+    status: "",
   },
 
   qualityCheckers: [],
@@ -94,14 +94,14 @@ function normalizeProfile(payload = {}) {
       data.trader_name ||
       data.name ||
       data.full_name ||
-      "RootVerse Trader",
+      "",
 
     traderId:
       data.traderId ||
       data.trader_id ||
       data.trader_code ||
       data.id ||
-      "TRD-001",
+      "",
 
     email: data.email || "",
     phone: data.phone || data.mobile || "",

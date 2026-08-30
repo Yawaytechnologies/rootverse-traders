@@ -204,7 +204,7 @@ const Login = () => {
                       setMobile(e.target.value.replace(/\D/g, "").slice(0, 10));
                       setError("");
                     }}
-                    placeholder="9876543210"
+                    placeholder="10 digit mobile number"
                     className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
                   />
                 </div>

@@ -359,7 +359,7 @@ function normalizeReceiptDetails(response) {
       snapshot.settlementDetails
   );
 
-  const normalizedPayment = firstObject(payment, payloadPayment, paymentSnapshot);
+  const normalizedPayment = firstObject(payloadPayment, payment, paymentSnapshot);
   const normalizedProcurement = firstObject(procurement, procurementSnapshot);
   const normalizedTrader = firstObject(trader, traderSnapshot);
   const normalizedProducer = firstObject(producer, producerSnapshot);
@@ -574,10 +574,11 @@ function normalizeReceiptDetails(response) {
       getFirstValue(receipt, ["outstanding_balance", "outstandingBalance"]) ||
       getFirstValue(settlement, ["outstanding_balance", "outstandingBalance"]) ||
       getFirstValue(snapshot, ["outstanding_balance", "outstandingBalance"]),
+    amount: currentPayment,
     paymentMode: valueOrReceiptFallback(
-      getFirstValue(normalizedPayment, ["mode", "payment_mode", "paymentMode"]) ||
-        getFirstValue(snapshot, ["mode", "payment_mode", "paymentMode"]) ||
-        getFirstValue(receipt, ["mode", "payment_mode", "paymentMode"])
+      getFirstValue(normalizedPayment, ["payment_mode", "paymentMode", "mode"]) ||
+        getFirstValue(snapshot, ["payment_mode", "paymentMode", "mode"]) ||
+        getFirstValue(receipt, ["payment_mode", "paymentMode", "mode"])
     ),
     bankReference: valueOrReceiptFallback(
       getFirstValue(normalizedPayment, [
@@ -613,11 +614,11 @@ function normalizeReceiptDetails(response) {
         getFirstValue(receipt, ["account_holder_name", "accountHolderName"])
     ),
     paidAt:
-      getFirstValue(normalizedPayment, ["paid_at", "paidAt"]) ||
+      getFirstValue(normalizedPayment, ["paid_at", "paidAt", "payment_date", "paymentDate"]) ||
       getFirstValue(normalizedPayment, ["created_at", "createdAt"]) ||
-      getFirstValue(snapshot, ["paid_at", "paidAt"]) ||
+      getFirstValue(snapshot, ["paid_at", "paidAt", "payment_date", "paymentDate"]) ||
       getFirstValue(snapshot, ["created_at", "createdAt"]) ||
-      getFirstValue(receipt, ["paid_at", "paidAt"]) ||
+      getFirstValue(receipt, ["paid_at", "paidAt", "payment_date", "paymentDate"]) ||
       getFirstValue(receipt, ["created_at", "createdAt"]),
     remarks: valueOrReceiptFallback(
       getFirstValue(normalizedPayment, ["remarks"]) ||
@@ -748,11 +749,23 @@ function normalizeReceiptListItem(item = {}) {
       item.settlement_snapshot ||
       item.settlementSnapshot
   );
-  const payment = objectOrEmpty(
-    item.payment || item.payment_details || item.paymentDetails
+  const payment = firstObject(
+    firstObjectFrom(
+      item.payment ||
+        item.payment_details ||
+        item.paymentDetails ||
+        item.payment_record ||
+        item.paymentRecord ||
+        item.procurement_payment ||
+        item.procurementPayment
+    ),
+    objectOrEmpty(snapshot.payment)
   );
-  const procurement = objectOrEmpty(
-    item.procurement || item.procurement_details || item.procurementDetails
+  const procurement = firstObject(
+    objectOrEmpty(
+      item.procurement || item.procurement_details || item.procurementDetails
+    ),
+    objectOrEmpty(snapshot.procurement)
   );
   const harvest = objectOrEmpty(
     item.harvest ||
@@ -857,8 +870,24 @@ function normalizeReceiptListItem(item = {}) {
         "farmerName",
       ])
   );
-  const amount = getFirstValue(item, ["amount", "payment_amount", "paymentAmount"]) ||
-    getFirstValue(payment, ["amount"]) ||
+  const amount = getFirstValue(item, [
+    "amount",
+    "payment_amount",
+    "paymentAmount",
+    "paid_amount",
+    "paidAmount",
+    "current_payment",
+    "currentPayment",
+  ]) ||
+    getFirstValue(payment, [
+      "amount",
+      "payment_amount",
+      "paymentAmount",
+      "paid_amount",
+      "paidAmount",
+      "current_payment",
+      "currentPayment",
+    ]) ||
     getFirstValue(snapshot, [
       "current_payment",
       "currentPayment",
@@ -868,14 +897,14 @@ function normalizeReceiptListItem(item = {}) {
       "paymentAmount",
     ]);
   const paymentMode = valueOrNotAvailable(
-    getFirstValue(item, ["payment_mode", "paymentMode"]) ||
-      getFirstValue(payment, ["payment_mode", "paymentMode"]) ||
-      getFirstValue(snapshot, ["payment_mode", "paymentMode"])
+    getFirstValue(item, ["payment_mode", "paymentMode", "mode"]) ||
+      getFirstValue(payment, ["payment_mode", "paymentMode", "mode"]) ||
+      getFirstValue(snapshot, ["payment_mode", "paymentMode", "mode"])
   );
   const paidAt =
-    getFirstValue(item, ["paid_at", "paidAt"]) ||
-    getFirstValue(payment, ["paid_at", "paidAt"]) ||
-    getFirstValue(snapshot, ["paid_at", "paidAt"]);
+    getFirstValue(item, ["paid_at", "paidAt", "payment_date", "paymentDate", "created_at", "createdAt"]) ||
+    getFirstValue(payment, ["paid_at", "paidAt", "payment_date", "paymentDate", "created_at", "createdAt"]) ||
+    getFirstValue(snapshot, ["paid_at", "paidAt", "payment_date", "paymentDate", "created_at", "createdAt"]);
   const outstandingBalance =
     getFirstValue(item, ["outstanding_balance", "outstandingBalance"]) ||
     getFirstValue(snapshot, ["outstanding_balance", "outstandingBalance"]);
@@ -1855,7 +1884,7 @@ function ProcurementsTab({
         ))}
       </section>
 
-      <TraderCard className="overflow-hidden">
+      <TraderCard>
         <div className="border-b border-slate-200 p-4 sm:p-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
@@ -1947,17 +1976,26 @@ function ProcurementsTab({
 
         <div className="hidden p-4 sm:block sm:p-5">
           <div className="rounded-2xl border border-slate-200">
-            <div className="w-full overflow-hidden">
-              <table className="w-full divide-y divide-slate-200 text-left">
+            <div className="w-full">
+              <table className="w-full table-fixed divide-y divide-slate-200 text-left">
+                <colgroup>
+                  <col className="w-[15%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[10%]" />
+                </colgroup>
                 <thead className="bg-slate-50">
                   <tr>
-                    <TableHead className="w-[12%]">Procurement</TableHead>
-                    <TableHead className="w-[18%]">Producer / Farmer</TableHead>
-                    <TableHead className="w-[15%] text-right">Total Value</TableHead>
-                    <TableHead className="w-[12%] text-right">Paid</TableHead>
-                    <TableHead className="w-[15%] text-right">Outstanding</TableHead>
-                    <TableHead className="w-[12%] text-center">Status</TableHead>
-                    <TableHead className="w-[16%] text-center">Actions</TableHead>
+                    <TableHead>Procurement</TableHead>
+                    <TableHead>Producer / Farmer</TableHead>
+                    <TableHead className="text-right">Total Value</TableHead>
+                    <TableHead className="text-right">Paid</TableHead>
+                    <TableHead className="text-right">Outstanding</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
@@ -2049,7 +2087,7 @@ function ReceiptsTab({
   const hasReceipts = receipts.length > 0;
 
   return (
-    <TraderCard className="overflow-hidden">
+    <TraderCard>
       <div className="border-b border-slate-200 p-4 sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
@@ -2110,9 +2148,19 @@ function ReceiptsTab({
       </div>
 
       <div className="hidden p-4 sm:block sm:p-5">
-        <div className="overflow-hidden rounded-2xl border border-slate-200">
-          <div className="scrollbar-hidden max-w-full overflow-x-auto">
-            <table className="min-w-[940px] divide-y divide-slate-200 text-left">
+        <div className="rounded-2xl border border-slate-200">
+          <div className="w-full">
+            <table className="w-full table-fixed divide-y divide-slate-200 text-left">
+              <colgroup>
+                <col className="w-[13%]" />
+                <col className="w-[14%]" />
+                <col className="w-[16%]" />
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
+                <col className="w-[13%]" />
+                <col className="w-[10%]" />
+                <col className="w-[10%]" />
+              </colgroup>
               <thead className="bg-slate-50">
                 <tr>
                   <TableHead>Receipt No</TableHead>
@@ -2851,7 +2899,7 @@ function TabButton({ active, children, onClick }) {
 
 function TableHead({ children, className = "" }) {
   return (
-    <th className={["whitespace-nowrap px-2 py-3 text-xs font-black uppercase tracking-wide text-slate-500", className].join(" ")}>
+    <th className={["whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500", className].join(" ")}>
       {children}
     </th>
   );
@@ -2859,7 +2907,7 @@ function TableHead({ children, className = "" }) {
 
 function TableCell({ children, className = "" }) {
   return (
-    <td className={["whitespace-nowrap px-2 py-3 text-sm text-slate-700", className].join(" ")}>
+    <td className={["truncate whitespace-nowrap overflow-hidden px-3 py-3 text-sm text-slate-700", className].join(" ")}>
       {children}
     </td>
   );
@@ -2886,7 +2934,7 @@ function ProcurementTableRow({
 
   return (
     <tr className="hover:bg-slate-50">
-      <TableCell className="w-[12%]">
+      <TableCell>
         <p className="max-w-[120px] truncate text-sm font-semibold text-slate-950">{procurement.procurementNo}</p>
         {procurement.harvest !== notAvailable ? (
           <p className="mt-1 truncate text-xs font-semibold text-slate-500">
@@ -2894,23 +2942,23 @@ function ProcurementTableRow({
           </p>
         ) : null}
       </TableCell>
-      <TableCell className="w-[18%]">
+      <TableCell>
         <span className="block max-w-[120px] truncate text-sm">{procurement.producer}</span>
       </TableCell>
-      <TableCell className="w-[15%] text-right text-sm font-bold text-slate-900">
+      <TableCell className="text-right text-sm font-bold text-slate-900">
         {formatCurrency(procurement.totalValue)}
       </TableCell>
-      <TableCell className="w-[12%] text-right text-sm">
+      <TableCell className="text-right text-sm">
         {formatCurrency(procurement.totalPaid)}
       </TableCell>
-      <TableCell className="w-[15%] text-right text-sm font-bold text-slate-900">
+      <TableCell className="text-right text-sm font-bold text-slate-900">
         {formatCurrency(procurement.outstandingBalance)}
       </TableCell>
-      <TableCell className="w-[12%] text-center">
+      <TableCell className="text-center">
         <PaymentStatusBadge status={procurement.status} />
       </TableCell>
-      <TableCell className="w-[16%]">
-        <div className="flex flex-nowrap items-center justify-center gap-1">
+      <TableCell>
+        <div className="flex flex-nowrap items-center justify-end gap-2">
           <button
             type="button"
             title="View Procurement"
@@ -3006,7 +3054,7 @@ function ProcurementMobileCard({
           onClick={() => onView(procurement)}
           title="View Procurement"
           aria-label="View procurement details"
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
         >
           <Eye size={16} aria-hidden="true" />
         </button>
@@ -3016,7 +3064,7 @@ function ProcurementMobileCard({
             onClick={() => onRecordPayment(procurement)}
             title="Record Payment"
             aria-label="Record payment"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
           >
             <CreditCard size={16} aria-hidden="true" />
           </button>
@@ -3027,7 +3075,7 @@ function ProcurementMobileCard({
           aria-label={receiptTitle}
           onClick={() => onViewReceipts(procurement)}
           disabled={!hasReceipts || receiptsLoading || Boolean(receiptsError)}
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
         >
           <Receipt size={16} aria-hidden="true" />
         </button>
@@ -3055,14 +3103,14 @@ function ReceiptTableRow({ receipt, printLoading, onView, onPrint }) {
         {formatOptionalCurrency(receipt.outstandingBalance)}
       </TableCell>
       <TableCell>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-end gap-2">
           <button
             type="button"
             title="View Payment Receipt"
             aria-label="View Payment Receipt"
             onClick={() => onView(receipt.id)}
             disabled={!hasReceiptId}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
           >
             <Eye size={17} aria-hidden="true" />
           </button>
@@ -3072,7 +3120,7 @@ function ReceiptTableRow({ receipt, printLoading, onView, onPrint }) {
             aria-label="Print Payment Receipt"
             onClick={() => onPrint(receipt.id)}
             disabled={!hasReceiptId || printLoading}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
           >
             <Printer size={17} aria-hidden="true" />
           </button>
@@ -3118,7 +3166,7 @@ function ReceiptMobileCard({ receipt, printLoading, onView, onPrint }) {
           aria-label="View Payment Receipt"
           onClick={() => onView(receipt.id)}
           disabled={!hasReceiptId}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
         >
           <Eye size={17} aria-hidden="true" />
         </button>
@@ -3128,7 +3176,7 @@ function ReceiptMobileCard({ receipt, printLoading, onView, onPrint }) {
           aria-label="Print Payment Receipt"
           onClick={() => onPrint(receipt.id)}
           disabled={!hasReceiptId || printLoading}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
         >
           <Printer size={17} aria-hidden="true" />
         </button>
@@ -3309,8 +3357,15 @@ function ProcurementReceiptsModal({
           />
         </DetailSection>
 
-        <div className="overflow-hidden rounded-2xl border border-slate-200">
-          <table className="w-full divide-y divide-slate-200 text-left">
+        <div className="rounded-2xl border border-slate-200">
+          <table className="w-full table-fixed divide-y divide-slate-200 text-left">
+            <colgroup>
+              <col className="w-[25%]" />
+              <col className="w-[20%]" />
+              <col className="w-[20%]" />
+              <col className="w-[25%]" />
+              <col className="w-[10%]" />
+            </colgroup>
             <thead className="bg-slate-50">
               <tr>
                 <TableHead>Receipt No</TableHead>
@@ -3339,7 +3394,7 @@ function ProcurementReceiptsModal({
                         aria-label="View Payment Receipt"
                         onClick={() => onView(receipt.id)}
                         disabled={!receipt.id}
-                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                       >
                         <Eye size={17} aria-hidden="true" />
                       </button>
@@ -3349,7 +3404,7 @@ function ProcurementReceiptsModal({
                         aria-label="Print Payment Receipt"
                         onClick={() => onPrint(receipt.id)}
                         disabled={!receipt.id || printLoading}
-                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
                       >
                         <Printer size={17} aria-hidden="true" />
                       </button>
